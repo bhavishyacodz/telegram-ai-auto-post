@@ -9,7 +9,7 @@ on:
 jobs:
   generate-and-post:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - name: Set up Python
@@ -17,10 +17,15 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install Hugging Face library
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --upgrade huggingface_hub
+
       - name: Generate images and post to Telegram
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          POLLINATIONS_API_KEY: ${{ secrets.POLLINATIONS_API_KEY }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         run: |
           cat > bot.py <<'PY'
@@ -31,11 +36,15 @@ jobs:
           import urllib.parse
           import urllib.request
 
+          from huggingface_hub import InferenceClient
+
+
           GEMINI_KEY = os.environ["GEMINI_API_KEY"]
-          POLLINATIONS_KEY = os.environ["POLLINATIONS_API_KEY"]
+          HF_TOKEN = os.environ["HF_TOKEN"]
           BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 
           CHANNEL = "@BHUVIAIPROMPTIMAGES"
+
 
           THEMES = [
               "dark futuristic game developer",
@@ -60,14 +69,23 @@ jobs:
               "post-apocalyptic programmer",
           ]
 
+
           IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
           now = datetime.datetime.now(IST)
 
-          # Two daily posting slots: 04:30 UTC = 10:00 IST, 14:30 UTC = 20:00 IST
+          # 04:30 UTC = 10:00 IST
+          # 14:30 UTC = 20:00 IST
           slot = 0 if now.hour < 15 else 1
+
           day_number = now.timetuple().tm_yday
-          theme_index = ((day_number - 1) * 2 + slot) % len(THEMES)
+
+          theme_index = (
+              ((day_number - 1) * 2 + slot)
+              % len(THEMES)
+          )
+
           theme = THEMES[theme_index]
+
 
           STYLE = """
           Maintain a consistent premium dark cinematic visual identity.
@@ -94,6 +112,7 @@ jobs:
           No duplicated objects.
           """
 
+
           PROMPT_REQUEST = f"""
           You are an expert AI image prompt engineer.
 
@@ -110,6 +129,7 @@ jobs:
 
           The four images must clearly belong to the same collection, but each must
           have a different:
+
           - scene
           - composition
           - environment
@@ -119,6 +139,7 @@ jobs:
           For EACH image create an extremely detailed image-generation prompt.
 
           Each prompt MUST describe:
+
           - main subject
           - subject appearance
           - clothing
@@ -151,7 +172,9 @@ jobs:
 
           Make the four prompts substantially different from one another.
 
-          Return ONLY valid JSON. Use exactly this format:
+          Return ONLY valid JSON.
+
+          Use exactly this format:
 
           {{
             "title": "short collection title",
@@ -173,7 +196,13 @@ jobs:
 
               payload = {
                   "contents": [
-                      {"parts": [{"text": PROMPT_REQUEST}]}
+                      {
+                          "parts": [
+                              {
+                                  "text": PROMPT_REQUEST
+                              }
+                          ]
+                      }
                   ],
                   "generationConfig": {
                       "responseMimeType": "application/json"
@@ -191,156 +220,392 @@ jobs:
               )
 
               try:
-                  with urllib.request.urlopen(request, timeout=120) as response:
-                      result = json.loads(response.read().decode("utf-8"))
+                  with urllib.request.urlopen(
+                      request,
+                      timeout=120
+                  ) as response:
+                      result = json.loads(
+                          response.read().decode("utf-8")
+                      )
+
               except urllib.error.HTTPError as error:
-                  error_body = error.read().decode("utf-8", errors="replace")
+                  error_body = error.read().decode(
+                      "utf-8",
+                      errors="replace"
+                  )
+
                   print("Gemini HTTP error:")
                   print(error_body)
+
                   raise
 
               try:
-                  text = result["candidates"][0]["content"]["parts"][0]["text"]
-              except (KeyError, IndexError) as error:
-                  print("Unexpected Gemini response shape:")
-                  print(json.dumps(result, indent=2)[:2000])
-                  raise Exception("Could not find generated text in Gemini response") from error
+                  text = (
+                      result["candidates"][0]
+                      ["content"]["parts"][0]["text"]
+                  )
 
-              return json.loads(text)
+              except (KeyError, IndexError) as error:
+                  print("Unexpected Gemini response:")
+                  print(
+                      json.dumps(
+                          result,
+                          indent=2
+                      )[:4000]
+                  )
+
+                  raise Exception(
+                      "Could not find generated text in Gemini response"
+                  ) from error
+
+              try:
+                  return json.loads(text)
+
+              except json.JSONDecodeError as error:
+                  print("Gemini returned invalid JSON:")
+                  print(text)
+
+                  raise Exception(
+                      "Gemini response was not valid JSON"
+                  ) from error
 
 
           def download_image(prompt, filename):
-              encoded_prompt = urllib.parse.quote(prompt, safe="")
-
-              image_url = (
-                  "https://gen.pollinations.ai/image/"
-                  + encoded_prompt
-                  + "?model=flux&width=1024&height=1024&nologo=true"
+              print(
+                  f"Generating Hugging Face image: {filename}"
               )
 
-              request = urllib.request.Request(
-                  image_url,
-                  headers={"Authorization": "Bearer " + POLLINATIONS_KEY},
+              client = InferenceClient(
+                  provider="auto",
+                  api_key=HF_TOKEN,
               )
 
               try:
-                  with urllib.request.urlopen(request, timeout=300) as response:
-                      image_data = response.read()
-              except urllib.error.HTTPError as error:
-                  error_body = error.read().decode("utf-8", errors="replace")
-                  print(f"Pollinations HTTP error for {filename}:")
-                  print(error_body)
+                  image = client.text_to_image(
+                      prompt=prompt,
+                      model="black-forest-labs/FLUX.1-schnell",
+                  )
+
+              except Exception as error:
+                  print(
+                      "Hugging Face image generation failed:"
+                  )
+                  print(str(error))
+
                   raise
 
-              with open(filename, "wb") as file:
-                  file.write(image_data)
+              try:
+                  image = image.convert("RGB")
+                  image.save(
+                      filename,
+                      format="JPEG",
+                      quality=95
+                  )
+
+              except Exception as error:
+                  print(
+                      f"Could not save {filename}:"
+                  )
+                  print(str(error))
+
+                  raise
+
+              print(
+                  f"Generated successfully: {filename}"
+              )
 
 
-          def telegram_request(method, data, content_type="application/x-www-form-urlencoded"):
-              url = f"https://api.telegram.org/bot{BOT_TOKEN}/{method}"
+          def telegram_request(
+              method,
+              data,
+              content_type="application/x-www-form-urlencoded"
+          ):
+              url = (
+                  f"https://api.telegram.org/"
+                  f"bot{BOT_TOKEN}/{method}"
+              )
 
               request = urllib.request.Request(
                   url,
                   data=data,
-                  headers={"Content-Type": content_type},
+                  headers={
+                      "Content-Type": content_type
+                  },
                   method="POST",
               )
 
               try:
-                  with urllib.request.urlopen(request, timeout=120) as response:
-                      return json.loads(response.read().decode("utf-8"))
+                  with urllib.request.urlopen(
+                      request,
+                      timeout=120
+                  ) as response:
+                      return json.loads(
+                          response.read().decode("utf-8")
+                      )
+
               except urllib.error.HTTPError as error:
-                  error_body = error.read().decode("utf-8", errors="replace")
-                  print(f"Telegram HTTP error calling {method}:")
+                  error_body = error.read().decode(
+                      "utf-8",
+                      errors="replace"
+                  )
+
+                  print(
+                      f"Telegram HTTP error calling {method}:"
+                  )
+
                   print(error_body)
+
                   raise
 
 
           def send_message(text):
-              data = urllib.parse.urlencode({"chat_id": CHANNEL, "text": text}).encode("utf-8")
-              return telegram_request("sendMessage", data)
+              data = urllib.parse.urlencode(
+                  {
+                      "chat_id": CHANNEL,
+                      "text": text
+                  }
+              ).encode("utf-8")
+
+              return telegram_request(
+                  "sendMessage",
+                  data
+              )
 
 
           def send_media_group(image_files):
-              boundary = "----TelegramBoundary123456789"
+              boundary = (
+                  "----TelegramBoundary123456789"
+              )
+
               body = bytearray()
 
+
               def add_field(name, value):
-                  body.extend(f"--{boundary}\r\n".encode())
-                  body.extend(f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode())
-                  body.extend(value.encode("utf-8"))
+                  body.extend(
+                      f"--{boundary}\r\n".encode()
+                  )
+
+                  body.extend(
+                      (
+                          f'Content-Disposition: form-data; '
+                          f'name="{name}"\r\n\r\n'
+                      ).encode()
+                  )
+
+                  body.extend(
+                      value.encode("utf-8")
+                  )
+
                   body.extend(b"\r\n")
 
+
               media = [
-                  {"type": "photo", "media": f"attach://{filename}"}
+                  {
+                      "type": "photo",
+                      "media": f"attach://{filename}"
+                  }
                   for filename in image_files
               ]
 
-              add_field("chat_id", CHANNEL)
-              add_field("media", json.dumps(media))
+
+              add_field(
+                  "chat_id",
+                  CHANNEL
+              )
+
+              add_field(
+                  "media",
+                  json.dumps(media)
+              )
+
 
               for filename in image_files:
-                  body.extend(f"--{boundary}\r\n".encode())
+                  body.extend(
+                      f"--{boundary}\r\n".encode()
+                  )
+
                   body.extend(
                       (
-                          f'Content-Disposition: form-data; name="{filename}"; '
+                          f'Content-Disposition: form-data; '
+                          f'name="{filename}"; '
                           f'filename="{filename}"\r\n'
                       ).encode()
                   )
-                  body.extend(b"Content-Type: image/jpeg\r\n\r\n")
-                  with open(filename, "rb") as file:
-                      body.extend(file.read())
+
+                  body.extend(
+                      b"Content-Type: image/jpeg\r\n\r\n"
+                  )
+
+                  with open(
+                      filename,
+                      "rb"
+                  ) as file:
+                      body.extend(
+                          file.read()
+                      )
+
                   body.extend(b"\r\n")
 
-              body.extend(f"--{boundary}--\r\n".encode())
+
+              body.extend(
+                  f"--{boundary}--\r\n".encode()
+              )
+
 
               return telegram_request(
                   "sendMediaGroup",
                   bytes(body),
-                  content_type=f"multipart/form-data; boundary={boundary}",
+                  content_type=(
+                      "multipart/form-data; "
+                      f"boundary={boundary}"
+                  ),
               )
 
 
           def main():
-              print("Theme:", theme)
-              print("Generating prompts with Gemini...")
+              print("================================")
+              print("AI TELEGRAM AUTO POSTER")
+              print("================================")
+
+              print(
+                  "Theme:",
+                  theme
+              )
+
+              print(
+                  "Generating prompts with Gemini..."
+              )
 
               result = gemini_generate_prompts()
 
-              title = result.get("title", "Daily AI Collection")
-              prompts = result.get("prompts")
 
-              if not isinstance(prompts, list):
-                  raise Exception("Gemini did not return a prompt list.")
+              title = result.get(
+                  "title",
+                  "Daily AI Collection"
+              )
+
+              prompts = result.get(
+                  "prompts"
+              )
+
+
+              if not isinstance(
+                  prompts,
+                  list
+              ):
+                  raise Exception(
+                      "Gemini did not return a prompt list."
+                  )
+
 
               if len(prompts) != 4:
-                  raise Exception(f"Gemini did not return exactly 4 prompts (got {len(prompts)}).")
+                  raise Exception(
+                      "Gemini did not return exactly "
+                      f"4 prompts. Got {len(prompts)}."
+                  )
+
+
+              print(
+                  "Gemini generated 4 prompts."
+              )
+
+              print(
+                  "Title:",
+                  title
+              )
+
 
               image_files = []
-              for i, prompt in enumerate(prompts, start=1):
-                  filename = f"image_{i}.jpg"
-                  print(f"Generating image {i}/4...")
-                  download_image(prompt, filename)
-                  image_files.append(filename)
-                  print(f"Generated: {filename}")
 
-              print("Uploading 4 images to Telegram...")
-              telegram_result = send_media_group(image_files)
 
-              if not telegram_result.get("ok"):
-                  raise Exception("Telegram album failed: " + str(telegram_result))
+              for i, prompt in enumerate(
+                  prompts,
+                  start=1
+              ):
+                  filename = (
+                      f"image_{i}.jpg"
+                  )
 
-              print("4 images posted successfully.")
+                  print(
+                      f"Generating image "
+                      f"{i}/4..."
+                  )
 
-              prompt_message = f"🎨 {title}\n\n"
-              for i, prompt in enumerate(prompts, start=1):
-                  prompt_message += f"━━ IMAGE {i} ━━\n{prompt}\n\n"
+                  download_image(
+                      prompt,
+                      filename
+                  )
 
-              chunks = [prompt_message[i:i + 4000] for i in range(0, len(prompt_message), 4000)]
+                  image_files.append(
+                      filename
+                  )
+
+
+              print(
+                  "Uploading 4 images "
+                  "to Telegram..."
+              )
+
+
+              telegram_result = send_media_group(
+                  image_files
+              )
+
+
+              if not telegram_result.get(
+                  "ok"
+              ):
+                  raise Exception(
+                      "Telegram album failed: "
+                      + str(telegram_result)
+                  )
+
+
+              print(
+                  "4 images posted successfully."
+              )
+
+
+              prompt_message = (
+                  f"🎨 {title}\n\n"
+              )
+
+
+              for i, prompt in enumerate(
+                  prompts,
+                  start=1
+              ):
+                  prompt_message += (
+                      f"━━ IMAGE {i} ━━\n"
+                      f"{prompt}\n\n"
+                  )
+
+
+              chunks = [
+                  prompt_message[i:i + 4000]
+                  for i in range(
+                      0,
+                      len(prompt_message),
+                      4000
+                  )
+              ]
+
+
               for chunk in chunks:
                   send_message(chunk)
 
-              print("SUCCESS: Complete post published.")
+
+              print(
+                  "================================"
+              )
+
+              print(
+                  "SUCCESS: Complete post published."
+              )
+
+              print(
+                  "================================"
+              )
 
 
           if __name__ == "__main__":
