@@ -276,15 +276,13 @@ jobs:
                   + "?model=flux"
                   + "&width=1024"
                   + "&height=1024"
+                  + "&key=" +
+          urllib.parse.quote(POLLINATIONS_KEY)
               )
 
-              request = urllib.request.Request(
-                  image_url,
-                  headers={
-                      "Authorization":
-                      "Bearer " + POLLINATIONS_KEY
-                  }
-              )
+              request = urllib.request.Request(image_url)
+              
+              
 
               filename = f"image_{i}.jpg"
 
