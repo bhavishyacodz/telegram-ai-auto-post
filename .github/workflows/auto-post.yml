@@ -255,11 +255,9 @@ jobs:
                   "Gemini did not return exactly 4 prompts."
               )
 
-          print("Title:", title)
-
           image_files = []
-
-          for i, prompt in enumerate(prompts, 1):
+          for i, prompt in enumerate(prompts,
+          1):
 
               print(
                   f"Generating image {i}/4..."
