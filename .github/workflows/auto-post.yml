@@ -16,14 +16,15 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           POLLINATIONS_API_KEY: ${{ secrets.POLLINATIONS_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+
         run: |
           cat > bot.py <<'PY'
+
           import os
           import json
           import urllib.request
           import urllib.parse
           import datetime
-          import random
 
           GEMINI_KEY = os.environ["GEMINI_API_KEY"]
           POLLINATIONS_KEY = os.environ["POLLINATIONS_API_KEY"]
@@ -54,54 +55,89 @@ jobs:
               "post-apocalyptic programmer"
           ]
 
-          IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+          IST = datetime.timezone(
+              datetime.timedelta(hours=5, minutes=30)
+          )
+
           now = datetime.datetime.now(IST)
 
-          # Two daily slots: morning and evening
+          # Two daily posting slots
           slot = 0 if now.hour < 15 else 1
+
           day_number = now.timetuple().tm_yday
 
-          theme_index = ((day_number - 1) * 2 + slot) % len(THEMES)
+          theme_index = (
+              ((day_number - 1) * 2 + slot)
+              % len(THEMES)
+          )
+
           theme = THEMES[theme_index]
 
-          style = """
+          STYLE = """
           Maintain a consistent premium dark cinematic visual identity.
-          Deep blacks and charcoal shadows, subtle cool-toned highlights,
-          dramatic cinematic lighting, realistic materials, atmospheric depth,
-          sophisticated composition, realistic proportions, detailed textures,
-          professional photography aesthetics, strong contrast, moody atmosphere,
-          no text, no watermark, no logo, no random letters, no distorted anatomy.
+
+          Deep blacks and charcoal shadows.
+          Subtle cool-toned highlights.
+          Dramatic cinematic lighting.
+          Realistic materials.
+          Atmospheric depth.
+          Sophisticated composition.
+          Realistic proportions.
+          Highly detailed textures.
+          Professional photography aesthetics.
+          Strong contrast.
+          Moody atmosphere.
+
+          No visible text.
+          No watermark.
+          No logo.
+          No random letters.
+          No distorted anatomy.
+          No malformed hands.
+          No extra fingers.
+          No duplicated objects.
           """
 
           prompt_request = f"""
           You are an expert AI image prompt engineer.
 
-          Today's visual theme is:
+          Today's visual theme:
+
           {theme}
 
-          The channel's permanent visual style is:
-          {style}
+          Permanent visual identity:
 
-          Create EXACTLY 4 completely different image concepts based on this
-          same theme and style.
+          {STYLE}
 
-          Every image must feel like it belongs to the same visual collection,
-          but each image must have a different scene, composition, environment,
-          subject action or camera perspective.
+          Create EXACTLY 4 completely different image concepts
+          based on the same theme and visual identity.
 
-          For EACH of the 4 images write an extremely detailed image-generation
+          The four images must clearly belong to the same collection,
+          but each must have a different:
+
+          - scene
+          - composition
+          - environment
+          - subject action
+          - camera perspective
+
+          For EACH image create an extremely detailed image-generation
           prompt.
 
-          Each prompt must describe:
+          Each prompt MUST describe:
+
           - main subject
-          - appearance
-          - clothing/materials
-          - pose/action
+          - subject appearance
+          - clothing
+          - materials
+          - pose
+          - action
           - environment
           - background
           - important objects
+          - foreground
           - lighting direction
-          - light quality
+          - lighting quality
           - shadows
           - atmosphere
           - color palette
@@ -112,14 +148,20 @@ jobs:
           - composition
           - perspective
           - realism
-          - texture/detail
+          - texture
+          - fine details
           - cinematic mood
           - negative prompt instructions
 
-          Make each prompt detailed enough that another person could paste it
-          into an image generator and recreate a very similar image.
+          Make every prompt detailed enough that another person could
+          paste it directly into an image generator and recreate
+          a very similar image.
 
-          Return ONLY valid JSON in this exact format:
+          Make the four prompts substantially different from one another.
+
+          Return ONLY valid JSON.
+
+          Use exactly this format:
 
           {{
             "title": "short collection title",
@@ -133,17 +175,20 @@ jobs:
           """
 
           def gemini():
+
               url = (
-                  "https://generativelanguage.googleapis.com/v1beta/models/"
-                  "gemini-2.5-flash:generateContent?key="
-                  + urllib.parse.quote(GEMINI_KEY)
+                  "https://generativelanguage.googleapis.com/"
+                  "v1beta/models/"
+                  "gemini-2.5-flash:generateContent"
               )
 
               data = {
                   "contents": [
                       {
                           "parts": [
-                              {"text": prompt_request}
+                              {
+                                  "text": prompt_request
+                              }
                           ]
                       }
                   ],
@@ -153,145 +198,335 @@ jobs:
                   }
               }
 
-              req = urllib.request.Request(
+              request = urllib.request.Request(
                   url,
-                  data=json.dumps(data).encode(),
-                  headers={"Content-Type": "application/json"},
+                  data=json.dumps(data).encode("utf-8"),
+                  headers={
+                      "Content-Type": "application/json",
+                      "x-goog-api-key": GEMINI_KEY
+                  },
                   method="POST"
               )
 
-              with urllib.request.urlopen(req, timeout=120) as response:
-                  result = json.loads(response.read().decode())
+              try:
+                  with urllib.request.urlopen(
+                      request,
+                      timeout=120
+                  ) as response:
 
-              text = result["candidates"][0]["content"]["parts"][0]["text"]
+                      result = json.loads(
+                          response.read().decode("utf-8")
+                      )
+
+              except urllib.error.HTTPError as error:
+
+                  error_body = error.read().decode(
+                      "utf-8",
+                      errors="replace"
+                  )
+
+                  print("Gemini HTTP error:")
+                  print(error_body)
+
+                  raise
+
+              text = (
+                  result["candidates"][0]
+                  ["content"]["parts"][0]["text"]
+              )
+
               return json.loads(text)
+
+          print("Generating prompts with Gemini...")
+          print("Theme:", theme)
 
           result = gemini()
 
           title = result["title"]
           prompts = result["prompts"]
 
-          if len(prompts) != 4:
-              raise Exception("Gemini did not return exactly 4 prompts.")
+          if not isinstance(prompts, list):
+              raise Exception(
+                  "Gemini did not return a prompt list."
+              )
 
-          print("Theme:", theme)
+          if len(prompts) != 4:
+              raise Exception(
+                  "Gemini did not return exactly 4 prompts."
+              )
+
           print("Title:", title)
 
           image_files = []
 
           for i, prompt in enumerate(prompts, 1):
 
-              encoded_prompt = urllib.parse.quote(prompt)
+              print(
+                  f"Generating image {i}/4..."
+              )
+
+              encoded_prompt = urllib.parse.quote(
+                  prompt,
+                  safe=""
+              )
 
               image_url = (
                   "https://gen.pollinations.ai/image/"
                   + encoded_prompt
-                  + "?model=flux&width=1024&height=1024"
+                  + "?model=flux"
+                  + "&width=1024"
+                  + "&height=1024"
               )
 
               request = urllib.request.Request(
                   image_url,
                   headers={
-                      "Authorization": "Bearer " + POLLINATIONS_KEY
+                      "Authorization":
+                      "Bearer " + POLLINATIONS_KEY
                   }
               )
 
               filename = f"image_{i}.jpg"
 
-              with urllib.request.urlopen(request, timeout=180) as response:
-                  image_data = response.read()
+              try:
 
-              with open(filename, "wb") as f:
-                  f.write(image_data)
+                  with urllib.request.urlopen(
+                      request,
+                      timeout=300
+                  ) as response:
+
+                      image_data = response.read()
+
+              except urllib.error.HTTPError as error:
+
+                  error_body = error.read().decode(
+                      "utf-8",
+                      errors="replace"
+                  )
+
+                  print(
+                      f"Pollinations HTTP error "
+                      f"for image {i}:"
+                  )
+
+                  print(error_body)
+
+                  raise
+
+              with open(filename, "wb") as file:
+
+                  file.write(image_data)
 
               image_files.append(filename)
 
-              print("Generated:", filename)
+              print(
+                  f"Generated: {filename}"
+              )
 
           def telegram(method, data):
-              url = f"https://api.telegram.org/bot{BOT_TOKEN}/{method}"
 
-              req = urllib.request.Request(
+              url = (
+                  f"https://api.telegram.org/"
+                  f"bot{BOT_TOKEN}/{method}"
+              )
+
+              request = urllib.request.Request(
                   url,
                   data=data,
                   method="POST"
               )
 
-              with urllib.request.urlopen(req, timeout=120) as response:
-                  return json.loads(response.read().decode())
+              with urllib.request.urlopen(
+                  request,
+                  timeout=120
+              ) as response:
 
-          # Send the 4 images as an album
-          boundary = "----TelegramBoundary123456"
+                  return json.loads(
+                      response.read().decode("utf-8")
+                  )
+
+          print("Uploading 4 images to Telegram...")
+
+          boundary = (
+              "----TelegramBoundary123456789"
+          )
 
           body = bytearray()
 
           media = []
+
           for i in range(4):
+
               media.append({
                   "type": "photo",
-                  "media": f"attach://image_{i+1}.jpg"
+                  "media": (
+                      f"attach://image_{i + 1}.jpg"
+                  )
               })
 
-          body.extend(f"--{boundary}\r\n".encode())
-          body.extend(b'Content-Disposition: form-data; name="chat_id"\r\n\r\n')
-          body.extend(CHANNEL.encode())
-          body.extend(b"\r\n")
+          # chat_id
+          body.extend(
+              f"--{boundary}\r\n".encode()
+          )
 
-          body.extend(f"--{boundary}\r\n".encode())
-          body.extend(b'Content-Disposition: form-data; name="media"\r\n\r\n')
-          body.extend(json.dumps(media).encode())
-          body.extend(b"\r\n")
+          body.extend(
+              b'Content-Disposition: form-data; '
+              b'name="chat_id"\r\n\r\n'
+          )
 
+          body.extend(
+              CHANNEL.encode()
+          )
+
+          body.extend(
+              b"\r\n"
+          )
+
+          # media JSON
+          body.extend(
+              f"--{boundary}\r\n".encode()
+          )
+
+          body.extend(
+              b'Content-Disposition: form-data; '
+              b'name="media"\r\n\r\n'
+          )
+
+          body.extend(
+              json.dumps(media).encode()
+          )
+
+          body.extend(
+              b"\r\n"
+          )
+
+          # image files
           for filename in image_files:
-              body.extend(f"--{boundary}\r\n".encode())
+
               body.extend(
-                  f'Content-Disposition: form-data; name="{filename}"; '
-                  f'filename="{filename}"\r\n'.encode()
+                  f"--{boundary}\r\n".encode()
               )
-              body.extend(b"Content-Type: image/jpeg\r\n\r\n")
 
-              with open(filename, "rb") as f:
-                  body.extend(f.read())
+              body.extend(
+                  (
+                      'Content-Disposition: form-data; '
+                      f'name="{filename}"; '
+                      f'filename="{filename}"\r\n'
+                  ).encode()
+              )
 
-              body.extend(b"\r\n")
+              body.extend(
+                  b"Content-Type: image/jpeg\r\n\r\n"
+              )
 
-          body.extend(f"--{boundary}--\r\n".encode())
+              with open(
+                  filename,
+                  "rb"
+              ) as file:
 
-          url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMediaGroup"
+                  body.extend(
+                      file.read()
+                  )
 
-          req = urllib.request.Request(
-              url,
+              body.extend(
+                  b"\r\n"
+              )
+
+          body.extend(
+              f"--{boundary}--\r\n".encode()
+          )
+
+          telegram_url = (
+              f"https://api.telegram.org/"
+              f"bot{BOT_TOKEN}/sendMediaGroup"
+          )
+
+          request = urllib.request.Request(
+              telegram_url,
               data=body,
               headers={
-                  "Content-Type": f"multipart/form-data; boundary={boundary}"
+                  "Content-Type":
+                  f"multipart/form-data; "
+                  f"boundary={boundary}"
               },
               method="POST"
           )
 
-          with urllib.request.urlopen(req, timeout=180) as response:
-              print("Album result:", response.read().decode())
+          try:
 
-          # Send the detailed prompts separately
-          prompt_message = f"🎨 {title}\n\n"
+              with urllib.request.urlopen(
+                  request,
+                  timeout=180
+              ) as response:
 
-          for i, prompt in enumerate(prompts, 1):
-              prompt_message += f"━━ IMAGE {i} ━━\n{prompt}\n\n"
+                  telegram_result = json.loads(
+                      response.read().decode(
+                          "utf-8"
+                      )
+                  )
 
-          # Telegram messages have a size limit, so split if necessary
+          except urllib.error.HTTPError as error:
+
+              error_body = error.read().decode(
+                  "utf-8",
+                  errors="replace"
+              )
+
+              print("Telegram HTTP error:")
+              print(error_body)
+
+              raise
+
+          if not telegram_result.get("ok"):
+
+              raise Exception(
+                  "Telegram album failed: "
+                  + str(telegram_result)
+              )
+
+          print("4 images posted successfully.")
+
+          # Send prompts as separate Telegram messages
+          prompt_message = (
+              f"🎨 {title}\n\n"
+          )
+
+          for i, prompt in enumerate(
+              prompts,
+              1
+          ):
+
+              prompt_message += (
+                  f"━━ IMAGE {i} ━━\n"
+                  f"{prompt}\n\n"
+              )
+
+          # Telegram text message limit
           chunks = [
-              prompt_message[i:i+4000]
-              for i in range(0, len(prompt_message), 4000)
+              prompt_message[i:i + 4000]
+              for i in range(
+                  0,
+                  len(prompt_message),
+                  4000
+              )
           ]
 
           for chunk in chunks:
+
               data = urllib.parse.urlencode({
                   "chat_id": CHANNEL,
                   "text": chunk
               }).encode()
 
-              telegram("sendMessage", data)
+              telegram(
+                  "sendMessage",
+                  data
+              )
 
-          print("SUCCESS: Posted to Telegram.")
+          print(
+              "SUCCESS: Complete post published."
+          )
+
           PY
 
           python bot.py
