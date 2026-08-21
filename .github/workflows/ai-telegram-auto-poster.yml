@@ -9,7 +9,7 @@ on:
 jobs:
   generate-and-post:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - name: Set up Python
@@ -17,10 +17,10 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install Hugging Face library
+      - name: Install libraries
         run: |
           python -m pip install --upgrade pip
-          python -m pip install --upgrade huggingface_hub
+          python -m pip install --upgrade huggingface_hub pillow
 
       - name: Generate images and post to Telegram
         env:
@@ -39,12 +39,22 @@ jobs:
           from huggingface_hub import InferenceClient
 
 
+          # ============================================================
+          # CONFIGURATION
+          # ============================================================
+
           GEMINI_KEY = os.environ["GEMINI_API_KEY"]
           HF_TOKEN = os.environ["HF_TOKEN"]
           BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 
           CHANNEL = "@BHUVIAIPROMPTIMAGES"
 
+          IMAGE_MODEL = "black-forest-labs/FLUX.1-schnell"
+
+
+          # ============================================================
+          # THEMES
+          # ============================================================
 
           THEMES = [
               "dark futuristic game developer",
@@ -70,25 +80,33 @@ jobs:
           ]
 
 
+          # ============================================================
+          # TIME / THEME SELECTION
+          # ============================================================
+
           IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
           now = datetime.datetime.now(IST)
 
           # 04:30 UTC = 10:00 IST
           # 14:30 UTC = 20:00 IST
+
           slot = 0 if now.hour < 15 else 1
 
           day_number = now.timetuple().tm_yday
 
           theme_index = (
-              ((day_number - 1) * 2 + slot)
-              % len(THEMES)
-          )
+              ((day_number - 1) * 2) + slot
+          ) % len(THEMES)
 
           theme = THEMES[theme_index]
 
 
+          # ============================================================
+          # VISUAL STYLE
+          # ============================================================
+
           STYLE = """
-          Maintain a consistent premium dark cinematic visual identity.
+          Premium dark cinematic visual identity.
 
           Deep blacks and charcoal shadows.
           Subtle cool-toned highlights.
@@ -113,6 +131,10 @@ jobs:
           """
 
 
+          # ============================================================
+          # GEMINI PROMPT
+          # ============================================================
+
           PROMPT_REQUEST = f"""
           You are an expert AI image prompt engineer.
 
@@ -127,8 +149,8 @@ jobs:
           Create EXACTLY 4 completely different image concepts based on the same
           theme and visual identity.
 
-          The four images must clearly belong to the same collection, but each must
-          have a different:
+          The four images must clearly belong to the same collection, but each
+          must have a different:
 
           - scene
           - composition
@@ -168,7 +190,7 @@ jobs:
           - negative prompt instructions
 
           Make every prompt detailed enough that another person could paste it
-          directly into an image generator and recreate a very similar image.
+          directly into an image generator.
 
           Make the four prompts substantially different from one another.
 
@@ -188,7 +210,12 @@ jobs:
           """
 
 
+          # ============================================================
+          # GEMINI
+          # ============================================================
+
           def gemini_generate_prompts():
+
               url = (
                   "https://generativelanguage.googleapis.com/v1beta/models/"
                   "gemini-3.6-flash:generateContent"
@@ -206,7 +233,7 @@ jobs:
                   ],
                   "generationConfig": {
                       "responseMimeType": "application/json"
-                  },
+                  }
               }
 
               request = urllib.request.Request(
@@ -214,21 +241,24 @@ jobs:
                   data=json.dumps(payload).encode("utf-8"),
                   headers={
                       "Content-Type": "application/json",
-                      "x-goog-api-key": GEMINI_KEY,
+                      "x-goog-api-key": GEMINI_KEY
                   },
-                  method="POST",
+                  method="POST"
               )
 
               try:
+
                   with urllib.request.urlopen(
                       request,
                       timeout=120
                   ) as response:
+
                       result = json.loads(
                           response.read().decode("utf-8")
                       )
 
               except urllib.error.HTTPError as error:
+
                   error_body = error.read().decode(
                       "utf-8",
                       errors="replace"
@@ -240,13 +270,16 @@ jobs:
                   raise
 
               try:
+
                   text = (
                       result["candidates"][0]
                       ["content"]["parts"][0]["text"]
                   )
 
               except (KeyError, IndexError) as error:
+
                   print("Unexpected Gemini response:")
+
                   print(
                       json.dumps(
                           result,
@@ -255,71 +288,73 @@ jobs:
                   )
 
                   raise Exception(
-                      "Could not find generated text in Gemini response"
+                      "Gemini did not return usable JSON."
                   ) from error
 
               try:
+
                   return json.loads(text)
 
               except json.JSONDecodeError as error:
+
                   print("Gemini returned invalid JSON:")
                   print(text)
 
                   raise Exception(
-                      "Gemini response was not valid JSON"
+                      "Could not parse Gemini JSON."
                   ) from error
 
 
+          # ============================================================
+          # HUGGING FACE IMAGE GENERATION
+          # ============================================================
+
           def download_image(prompt, filename):
+
               print(
-                  f"Generating Hugging Face image: {filename}"
+                  f"Generating image with Hugging Face: {filename}"
               )
 
               client = InferenceClient(
-                  provider="auto",
-                  api_key=HF_TOKEN,
+                  provider="hf-inference",
+                  api_key=HF_TOKEN
               )
 
               try:
+
                   image = client.text_to_image(
                       prompt=prompt,
-                      model="black-forest-labs/FLUX.1-schnell",
+                      model=IMAGE_MODEL
                   )
 
               except Exception as error:
-                  print(
-                      "Hugging Face image generation failed:"
-                  )
-                  print(str(error))
+
+                  print("Hugging Face image generation failed:")
+                  print(error)
 
                   raise
 
-              try:
-                  image = image.convert("RGB")
-                  image.save(
-                      filename,
-                      format="JPEG",
-                      quality=95
-                  )
-
-              except Exception as error:
-                  print(
-                      f"Could not save {filename}:"
-                  )
-                  print(str(error))
-
-                  raise
-
-              print(
-                  f"Generated successfully: {filename}"
+              image.save(
+                  filename,
+                  format="JPEG",
+                  quality=95
               )
 
+              print(
+                  f"Saved image: {filename}"
+              )
+
+
+          # ============================================================
+          # TELEGRAM REQUEST
+          # ============================================================
 
           def telegram_request(
               method,
               data,
               content_type="application/x-www-form-urlencoded"
           ):
+
               url = (
                   f"https://api.telegram.org/"
                   f"bot{BOT_TOKEN}/{method}"
@@ -331,19 +366,22 @@ jobs:
                   headers={
                       "Content-Type": content_type
                   },
-                  method="POST",
+                  method="POST"
               )
 
               try:
+
                   with urllib.request.urlopen(
                       request,
                       timeout=120
                   ) as response:
+
                       return json.loads(
                           response.read().decode("utf-8")
                       )
 
               except urllib.error.HTTPError as error:
+
                   error_body = error.read().decode(
                       "utf-8",
                       errors="replace"
@@ -358,7 +396,12 @@ jobs:
                   raise
 
 
+          # ============================================================
+          # SEND TELEGRAM MESSAGE
+          # ============================================================
+
           def send_message(text):
+
               data = urllib.parse.urlencode(
                   {
                       "chat_id": CHANNEL,
@@ -366,29 +409,43 @@ jobs:
                   }
               ).encode("utf-8")
 
-              return telegram_request(
+              result = telegram_request(
                   "sendMessage",
                   data
               )
 
+              if not result.get("ok"):
+
+                  raise Exception(
+                      "Telegram message failed: "
+                      + str(result)
+                  )
+
+              return result
+
+
+          # ============================================================
+          # SEND 4 IMAGES AS TELEGRAM ALBUM
+          # ============================================================
 
           def send_media_group(image_files):
-              boundary = (
-                  "----TelegramBoundary123456789"
-              )
+
+              boundary = "----TelegramBoundary987654321"
 
               body = bytearray()
 
 
               def add_field(name, value):
+
                   body.extend(
                       f"--{boundary}\r\n".encode()
                   )
 
                   body.extend(
                       (
-                          f'Content-Disposition: form-data; '
-                          f'name="{name}"\r\n\r\n'
+                          f'Content-Disposition: '
+                          f'form-data; name="{name}"'
+                          f'\r\n\r\n'
                       ).encode()
                   )
 
@@ -396,7 +453,9 @@ jobs:
                       value.encode("utf-8")
                   )
 
-                  body.extend(b"\r\n")
+                  body.extend(
+                      b"\r\n"
+                  )
 
 
               media = [
@@ -420,6 +479,7 @@ jobs:
 
 
               for filename in image_files:
+
                   body.extend(
                       f"--{boundary}\r\n".encode()
                   )
@@ -440,11 +500,14 @@ jobs:
                       filename,
                       "rb"
                   ) as file:
+
                       body.extend(
                           file.read()
                       )
 
-                  body.extend(b"\r\n")
+                  body.extend(
+                      b"\r\n"
+                  )
 
 
               body.extend(
@@ -452,32 +515,50 @@ jobs:
               )
 
 
-              return telegram_request(
+              result = telegram_request(
                   "sendMediaGroup",
                   bytes(body),
                   content_type=(
                       "multipart/form-data; "
                       f"boundary={boundary}"
-                  ),
+                  )
               )
 
+
+              if not result.get("ok"):
+
+                  raise Exception(
+                      "Telegram album failed: "
+                      + str(result)
+                  )
+
+
+              return result
+
+
+          # ============================================================
+          # MAIN
+          # ============================================================
 
           def main():
-              print("================================")
-              print("AI TELEGRAM AUTO POSTER")
-              print("================================")
 
-              print(
-                  "Theme:",
-                  theme
-              )
+              print("=" * 60)
+              print("AI TELEGRAM AUTO POSTER")
+              print("=" * 60)
+
+              print()
+              print("Theme:", theme)
+              print()
+
+              # -----------------------------------------
+              # Generate prompts
+              # -----------------------------------------
 
               print(
                   "Generating prompts with Gemini..."
               )
 
               result = gemini_generate_prompts()
-
 
               title = result.get(
                   "title",
@@ -493,12 +574,14 @@ jobs:
                   prompts,
                   list
               ):
+
                   raise Exception(
                       "Gemini did not return a prompt list."
                   )
 
 
               if len(prompts) != 4:
+
                   raise Exception(
                       "Gemini did not return exactly "
                       f"4 prompts. Got {len(prompts)}."
@@ -515,6 +598,10 @@ jobs:
               )
 
 
+              # -----------------------------------------
+              # Generate images
+              # -----------------------------------------
+
               image_files = []
 
 
@@ -522,13 +609,14 @@ jobs:
                   prompts,
                   start=1
               ):
+
                   filename = (
                       f"image_{i}.jpg"
                   )
 
+                  print()
                   print(
-                      f"Generating image "
-                      f"{i}/4..."
+                      f"Generating image {i}/4..."
                   )
 
                   download_image(
@@ -541,20 +629,22 @@ jobs:
                   )
 
 
-              print(
-                  "Uploading 4 images "
-                  "to Telegram..."
-              )
+              # -----------------------------------------
+              # Send images
+              # -----------------------------------------
 
+              print()
+              print(
+                  "Uploading 4 images to Telegram..."
+              )
 
               telegram_result = send_media_group(
                   image_files
               )
 
 
-              if not telegram_result.get(
-                  "ok"
-              ):
+              if not telegram_result.get("ok"):
+
                   raise Exception(
                       "Telegram album failed: "
                       + str(telegram_result)
@@ -566,6 +656,10 @@ jobs:
               )
 
 
+              # -----------------------------------------
+              # Send prompts
+              # -----------------------------------------
+
               prompt_message = (
                   f"🎨 {title}\n\n"
               )
@@ -575,12 +669,14 @@ jobs:
                   prompts,
                   start=1
               ):
+
                   prompt_message += (
                       f"━━ IMAGE {i} ━━\n"
                       f"{prompt}\n\n"
                   )
 
 
+              # Telegram message limit
               chunks = [
                   prompt_message[i:i + 4000]
                   for i in range(
@@ -592,24 +688,25 @@ jobs:
 
 
               for chunk in chunks:
-                  send_message(chunk)
+
+                  send_message(
+                      chunk
+                  )
 
 
-              print(
-                  "================================"
-              )
+              print()
+              print("=" * 60)
+              print("SUCCESS: COMPLETE POST PUBLISHED")
+              print("=" * 60)
 
-              print(
-                  "SUCCESS: Complete post published."
-              )
 
-              print(
-                  "================================"
-              )
-
+          # ============================================================
+          # START
+          # ============================================================
 
           if __name__ == "__main__":
               main()
+
           PY
 
           python bot.py
