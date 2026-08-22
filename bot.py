@@ -1,0 +1,658 @@
+import datetime
+import json
+import os
+import urllib.error
+import urllib.parse
+import urllib.request
+
+from huggingface_hub import InferenceClient
+
+
+# ==========================================
+# ENVIRONMENT VARIABLES
+# ==========================================
+
+GEMINI_KEY = os.environ["GEMINI_API_KEY"]
+HF_TOKEN = os.environ["HF_TOKEN"]
+BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
+
+
+# ==========================================
+# TELEGRAM CHANNEL
+# ==========================================
+
+CHANNEL = "@BHUVIAIPROMPTIMAGES"
+
+
+# ==========================================
+# IMAGE THEMES
+# ==========================================
+
+THEMES = [
+    "dark futuristic game developer",
+    "cyberpunk programmer",
+    "futuristic AI engineer",
+    "dark gaming workstation",
+    "neon game development studio",
+    "cyberpunk city at midnight",
+    "mysterious digital creator",
+    "futuristic hacker workstation",
+    "dark futuristic technology",
+    "AI laboratory at night",
+    "neon-lit software developer",
+    "futuristic virtual reality creator",
+    "dark sci-fi command center",
+    "cyberpunk game designer",
+    "future technology architect",
+    "digital artist in a futuristic studio",
+    "dark robotics engineer",
+    "futuristic computer scientist",
+    "neon-lit creative studio",
+    "post-apocalyptic programmer"
+]
+
+
+# ==========================================
+# TIME / DAILY THEME
+# ==========================================
+
+IST = datetime.timezone(
+    datetime.timedelta(hours=5, minutes=30)
+)
+
+now = datetime.datetime.now(IST)
+
+slot = 0 if now.hour < 15 else 1
+
+day_number = now.timetuple().tm_yday
+
+theme_index = (
+    ((day_number - 1) * 2) + slot
+) % len(THEMES)
+
+theme = THEMES[theme_index]
+
+
+# ==========================================
+# VISUAL STYLE
+# ==========================================
+
+STYLE = """
+Premium dark cinematic visual identity.
+
+Deep blacks.
+Charcoal shadows.
+Cool blue and subtle violet highlights.
+Dramatic cinematic lighting.
+Realistic materials.
+Atmospheric depth.
+Sophisticated composition.
+Realistic human proportions.
+Highly detailed textures.
+Professional photography aesthetics.
+Strong contrast.
+Moody atmosphere.
+
+No visible text.
+No watermark.
+No logo.
+No random letters.
+No distorted anatomy.
+No malformed hands.
+No extra fingers.
+No duplicated objects.
+"""
+
+
+# ==========================================
+# GEMINI PROMPT
+# ==========================================
+
+PROMPT_REQUEST = f"""
+
+You are an expert AI image prompt engineer.
+
+Today's theme:
+
+{theme}
+
+Permanent visual identity:
+
+{STYLE}
+
+Create EXACTLY 4 completely different image concepts.
+
+All four images must belong to the same premium visual collection.
+
+Each image must have a substantially different:
+
+- scene
+- composition
+- environment
+- subject action
+- camera perspective
+
+For each image create an extremely detailed
+image-generation prompt.
+
+Every prompt must describe:
+
+- main subject
+- subject appearance
+- clothing
+- materials
+- pose
+- action
+- environment
+- background
+- important objects
+- foreground
+- lighting direction
+- lighting quality
+- shadows
+- atmosphere
+- color palette
+- camera angle
+- camera distance
+- lens
+- depth of field
+- composition
+- perspective
+- realism
+- texture
+- fine details
+- cinematic mood
+- negative prompt instructions
+
+Make every prompt detailed enough that it can be directly
+used in an image generator.
+
+Make the four prompts substantially different.
+
+Return ONLY valid JSON.
+
+EXACT FORMAT:
+
+{{
+  "title": "short collection title",
+  "prompts": [
+    "very detailed prompt 1",
+    "very detailed prompt 2",
+    "very detailed prompt 3",
+    "very detailed prompt 4"
+  ]
+}}
+
+"""
+
+
+# ==========================================
+# GEMINI
+# ==========================================
+
+def gemini_generate_prompts():
+
+    url = (
+        "https://generativelanguage.googleapis.com/"
+        "v1beta/models/gemini-3.5-flash:generateContent"
+    )
+
+    payload = {
+        "contents": [
+            {
+                "parts": [
+                    {
+                        "text": PROMPT_REQUEST
+                    }
+                ]
+            }
+        ],
+        "generationConfig": {
+            "responseMimeType": "application/json"
+        }
+    }
+
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "x-goog-api-key": GEMINI_KEY
+        },
+        method="POST"
+    )
+
+    try:
+
+        with urllib.request.urlopen(
+            request,
+            timeout=120
+        ) as response:
+
+            result = json.loads(
+                response.read().decode("utf-8")
+            )
+
+    except urllib.error.HTTPError as error:
+
+        error_body = error.read().decode(
+            "utf-8",
+            errors="replace"
+        )
+
+        print("Gemini HTTP error:")
+        print(error_body)
+
+        raise
+
+
+    try:
+
+        text = (
+            result["candidates"][0]
+            ["content"]["parts"][0]["text"]
+        )
+
+    except (KeyError, IndexError) as error:
+
+        print("Unexpected Gemini response:")
+        print(
+            json.dumps(
+                result,
+                indent=2
+            )[:5000]
+        )
+
+        raise Exception(
+            "Gemini did not return valid text."
+        ) from error
+
+
+    return json.loads(text)
+
+
+# ==========================================
+# HUGGING FACE IMAGE GENERATION
+# ==========================================
+
+def download_image(prompt, filename):
+
+    print(
+        f"Generating image with Hugging Face: {filename}"
+    )
+
+    client = InferenceClient(
+        provider="hf-inference",
+        api_key=HF_TOKEN
+    )
+
+    image = client.text_to_image(
+        prompt=prompt,
+        model="stabilityai/stable-diffusion-3-medium-diffusers"
+    )
+
+    image.save(filename)
+
+    print(
+        f"Saved image: {filename}"
+    )
+
+
+# ==========================================
+# TELEGRAM API
+# ==========================================
+
+def telegram_request(
+    method,
+    data,
+    content_type="application/x-www-form-urlencoded"
+):
+
+    url = (
+        f"https://api.telegram.org/"
+        f"bot{BOT_TOKEN}/{method}"
+    )
+
+    request = urllib.request.Request(
+        url,
+        data=data,
+        headers={
+            "Content-Type": content_type
+        },
+        method="POST"
+    )
+
+    try:
+
+        with urllib.request.urlopen(
+            request,
+            timeout=120
+        ) as response:
+
+            return json.loads(
+                response.read().decode("utf-8")
+            )
+
+    except urllib.error.HTTPError as error:
+
+        error_body = error.read().decode(
+            "utf-8",
+            errors="replace"
+        )
+
+        print(
+            f"Telegram HTTP error: {method}"
+        )
+
+        print(error_body)
+
+        raise
+
+
+# ==========================================
+# SEND TELEGRAM TEXT
+# ==========================================
+
+def send_message(text):
+
+    data = urllib.parse.urlencode(
+        {
+            "chat_id": CHANNEL,
+            "text": text
+        }
+    ).encode("utf-8")
+
+    result = telegram_request(
+        "sendMessage",
+        data
+    )
+
+    if not result.get("ok"):
+
+        raise Exception(
+            "Telegram sendMessage failed: "
+            + str(result)
+        )
+
+    return result
+
+
+# ==========================================
+# SEND 4 IMAGES AS ALBUM
+# ==========================================
+
+def send_media_group(image_files):
+
+    boundary = (
+        "----TelegramBoundary987654321"
+    )
+
+    body = bytearray()
+
+
+    def add_field(name, value):
+
+        body.extend(
+            f"--{boundary}\r\n".encode()
+        )
+
+        body.extend(
+            (
+                f'Content-Disposition: '
+                f'form-data; name="{name}"'
+                f'\r\n\r\n'
+            ).encode()
+        )
+
+        body.extend(
+            value.encode("utf-8")
+        )
+
+        body.extend(b"\r\n")
+
+
+    media = []
+
+    for filename in image_files:
+
+        media.append(
+            {
+                "type": "photo",
+                "media": f"attach://{filename}"
+            }
+        )
+
+
+    add_field(
+        "chat_id",
+        CHANNEL
+    )
+
+    add_field(
+        "media",
+        json.dumps(media)
+    )
+
+
+    for filename in image_files:
+
+        body.extend(
+            f"--{boundary}\r\n".encode()
+        )
+
+        body.extend(
+            (
+                f'Content-Disposition: form-data; '
+                f'name="{filename}"; '
+                f'filename="{filename}"\r\n'
+            ).encode()
+        )
+
+        body.extend(
+            b"Content-Type: image/png\r\n\r\n"
+        )
+
+
+        with open(
+            filename,
+            "rb"
+        ) as file:
+
+            body.extend(
+                file.read()
+            )
+
+
+        body.extend(
+            b"\r\n"
+        )
+
+
+    body.extend(
+        f"--{boundary}--\r\n".encode()
+    )
+
+
+    return telegram_request(
+        "sendMediaGroup",
+        bytes(body),
+        content_type=(
+            "multipart/form-data; "
+            f"boundary={boundary}"
+        )
+    )
+
+
+# ==========================================
+# MAIN
+# ==========================================
+
+def main():
+
+    print("")
+    print("==============================")
+    print("AI TELEGRAM AUTO POSTER")
+    print("==============================")
+    print("")
+
+    print(
+        "Theme:",
+        theme
+    )
+
+    print("")
+    print(
+        "Generating prompts with Gemini..."
+    )
+
+
+    # --------------------------
+    # GEMINI
+    # --------------------------
+
+    result = gemini_generate_prompts()
+
+
+    title = result.get(
+        "title",
+        "Daily AI Collection"
+    )
+
+
+    prompts = result.get(
+        "prompts"
+    )
+
+
+    if not isinstance(
+        prompts,
+        list
+    ):
+
+        raise Exception(
+            "Gemini did not return a prompt list."
+        )
+
+
+    if len(prompts) != 4:
+
+        raise Exception(
+            "Gemini did not return exactly "
+            f"4 prompts. Got {len(prompts)}."
+        )
+
+
+    print(
+        "Gemini generated 4 prompts."
+    )
+
+
+    # --------------------------
+    # GENERATE IMAGES
+    # --------------------------
+
+    image_files = []
+
+
+    for i, prompt in enumerate(
+        prompts,
+        start=1
+    ):
+
+        filename = (
+            f"image_{i}.png"
+        )
+
+        print("")
+        print(
+            f"Generating image {i}/4..."
+        )
+
+        download_image(
+            prompt,
+            filename
+        )
+
+        image_files.append(
+            filename
+        )
+
+
+    # --------------------------
+    # TELEGRAM ALBUM
+    # --------------------------
+
+    print("")
+    print(
+        "Uploading 4 images to Telegram..."
+    )
+
+
+    telegram_result = send_media_group(
+        image_files
+    )
+
+
+    if not telegram_result.get("ok"):
+
+        raise Exception(
+            "Telegram album failed: "
+            + str(telegram_result)
+        )
+
+
+    print(
+        "4 images posted successfully."
+    )
+
+
+    # --------------------------
+    # SEND PROMPTS
+    # --------------------------
+
+    prompt_message = (
+        f"🎨 {title}\n\n"
+    )
+
+
+    for i, prompt in enumerate(
+        prompts,
+        start=1
+    ):
+
+        prompt_message += (
+            f"━━ IMAGE {i} ━━\n"
+            f"{prompt}\n\n"
+        )
+
+
+    # Telegram text limit
+    # is approximately 4096 chars.
+
+    chunks = [
+        prompt_message[i:i + 4000]
+        for i in range(
+            0,
+            len(prompt_message),
+            4000
+        )
+    ]
+
+
+    for chunk in chunks:
+
+        send_message(chunk)
+
+
+    print("")
+    print("==============================")
+    print("SUCCESS")
+    print("==============================")
+
+
+# ==========================================
+# START
+# ==========================================
+
+if __name__ == "__main__":
+    main()
