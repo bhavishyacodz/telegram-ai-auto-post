@@ -581,48 +581,51 @@ def gemini_generate_content():
 # POLLINATIONS IMAGE GENERATION
 # ================================================================
 
+# ============================================================
+# GEMINI IMAGE GENERATION
+# ============================================================
+
 def download_image(prompt, filename):
-    print(
-        f"Generating image with Pollinations: {filename}"
-    )
+    print(f"Generating image with Gemini: {filename}")
 
     try:
-        encoded_prompt = urllib.parse.quote(prompt)
+        from google import genai
+        from google.genai import types
+        import base64
 
-        url = (
-            "https://image.pollinations.ai/prompt/"
-            f"{encoded_prompt}"
-            "?width=1024"
-            "&height=1024"
-            "&nologo=true"
+        client = genai.Client(api_key=GEMINI_KEY)
+
+        response = client.models.generate_content(
+            model="gemini-3.1-flash-image",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_modalities=["IMAGE"],
+                response_format={
+                    "image": {
+                        "aspect_ratio": "1:1",
+                        "image_size": "2K"
+                    }
+                }
+            )
         )
 
-        request = urllib.request.Request(
-            url,
-            headers={
-                "User-Agent": "Mozilla/5.0"
-            }
-        )
+        for part in response.parts:
+            if part.inline_data:
+                image_data = part.inline_data.data
 
-        with urllib.request.urlopen(
-            request,
-            timeout=180
-        ) as response:
-            image_data = response.read()
+                if isinstance(image_data, str):
+                    image_data = base64.b64decode(image_data)
 
-        with open(filename, "wb") as file:
-            file.write(image_data)
+                with open(filename, "wb") as file:
+                    file.write(image_data)
 
-        print(
-            f"Saved image: {filename}"
-        )
+                print(f"Saved Gemini image: {filename}")
+                return filename
 
-        return filename
+        raise Exception("Gemini did not return an image.")
 
     except Exception as error:
-        print(
-            f"Image generation failed: {error}"
-        )
+        print(f"Gemini image generation failed: {error}")
         raise
 
 
