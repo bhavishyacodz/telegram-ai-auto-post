@@ -934,3 +934,121 @@ def main():
     # --------------------------------------------------------
     # GENERATE IMAGES
     # ------------------------------------------
+
+
+    image_files = []
+
+    for index, image in enumerate(
+        result["images"],
+        start=1
+    ):
+
+        filename = (
+            f"image_{index}.png"
+        )
+
+        print("")
+        print(
+            f"Generating image {index}/4..."
+        )
+
+        download_image(
+            image["full_prompt"],
+            filename
+        )
+
+        image_files.append(
+            filename
+        )
+
+
+    # --------------------------------------------------------
+    # POST IMAGE ALBUM
+    # --------------------------------------------------------
+
+    print("")
+    print(
+        "Uploading 4 images to Telegram..."
+    )
+
+    telegram_result = send_media_group(
+        image_files
+    )
+
+    if not telegram_result.get("ok"):
+
+        raise Exception(
+            "Telegram album failed: "
+            + str(telegram_result)
+        )
+
+    print(
+        "4 images posted successfully."
+    )
+
+
+    # --------------------------------------------------------
+    # POST PROMPT LIBRARY CONTENT
+    # --------------------------------------------------------
+
+    print("")
+    print(
+        "Building Telegram prompt library post..."
+    )
+
+    telegram_message = build_telegram_message(
+        result
+    )
+
+    print(
+        f"Telegram message length: "
+        f"{len(telegram_message)} characters"
+    )
+
+    send_long_message(
+        telegram_message
+    )
+
+
+    # --------------------------------------------------------
+    # SUCCESS
+    # --------------------------------------------------------
+
+    print("")
+    print("======================================")
+    print("V1 SUCCESS")
+    print("======================================")
+    print("")
+    print(
+        "Category:",
+        category["name"]
+    )
+    print(
+        "Collection:",
+        result["collection_title"]
+    )
+    print(
+        "Images:",
+        len(result["images"])
+    )
+    print(
+        "Structured prompts: YES"
+    )
+    print(
+        "Prompt breakdowns: YES"
+    )
+    print(
+        "Aspect ratios: YES"
+    )
+    print("")
+
+
+# ============================================================
+# START
+# ============================================================
+
+if __name__ == "__main__":
+    main()
+
+
+    
