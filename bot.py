@@ -577,27 +577,53 @@ def gemini_generate_content():
 # HUGGING FACE IMAGE GENERATION
 # ============================================================
 
+# ================================================================
+# POLLINATIONS IMAGE GENERATION
+# ================================================================
+
 def download_image(prompt, filename):
-
     print(
-        f"Generating image with Hugging Face: {filename}"
+        f"Generating image with Pollinations: {filename}"
     )
 
-    client = InferenceClient(
-        provider="hf-inference",
-        api_key=HF_TOKEN
-    )
+    try:
+        encoded_prompt = urllib.parse.quote(prompt)
 
-    image = client.text_to_image(
-        prompt=prompt,
-        model="stabilityai/stable-diffusion-3-medium-diffusers"
-    )
+        url = (
+            "https://image.pollinations.ai/prompt/"
+            f"{encoded_prompt}"
+            "?width=1024"
+            "&height=1024"
+            "&nologo=true"
+        )
 
-    image.save(filename)
+        request = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": "Mozilla/5.0"
+            }
+        )
 
-    print(
-        f"Saved image: {filename}"
-    )
+        with urllib.request.urlopen(
+            request,
+            timeout=180
+        ) as response:
+            image_data = response.read()
+
+        with open(filename, "wb") as file:
+            file.write(image_data)
+
+        print(
+            f"Saved image: {filename}"
+        )
+
+        return filename
+
+    except Exception as error:
+        print(
+            f"Image generation failed: {error}"
+        )
+        raise
 
 
 # ============================================================
