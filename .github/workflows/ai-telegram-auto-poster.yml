@@ -8,38 +8,26 @@ on:
 
 jobs:
   generate-and-post:
-    runs-on: ubuntu-latest 
-    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
 
-      # ==============================
-      # SET UP PYTHON
-      # ==============================
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-
-      # ==============================
-      # INSTALL LIBRARIES
-      # ==============================
       - name: Install libraries
         run: |
           python -m pip install --upgrade pip
           python -m pip install --upgrade huggingface_hub pillow
 
-
-      # ==============================
-      # GENERATE AND POST
-      # ==============================
       - name: Generate images and post to Telegram
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-
         run: |
 
           cat > bot.py <<'PY'
@@ -47,6 +35,7 @@ jobs:
           import datetime
           import json
           import os
+          import time
           import urllib.error
           import urllib.parse
           import urllib.request
@@ -54,25 +43,27 @@ jobs:
           from huggingface_hub import InferenceClient
 
 
-          # ==========================================
-          # ENVIRONMENT VARIABLES
-          # ==========================================
+          # =========================================================
+          # CONFIG
+          # =========================================================
 
           GEMINI_KEY = os.environ["GEMINI_API_KEY"]
           HF_TOKEN = os.environ["HF_TOKEN"]
           BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 
-
-          # ==========================================
-          # TELEGRAM CHANNEL
-          # ==========================================
-
           CHANNEL = "@BHUVIAIPROMPTIMAGES"
 
+          GEMINI_MODEL = "gemini-3.5-flash"
 
-          # ==========================================
-          # IMAGE THEMES
-          # ==========================================
+          HF_MODEL = (
+              "stabilityai/"
+              "stable-diffusion-3-medium-diffusers"
+          )
+
+
+          # =========================================================
+          # THEMES
+          # =========================================================
 
           THEMES = [
               "dark futuristic game developer",
@@ -98,9 +89,9 @@ jobs:
           ]
 
 
-          # ==========================================
-          # TIME / DAILY THEME
-          # ==========================================
+          # =========================================================
+          # TIME
+          # =========================================================
 
           IST = datetime.timezone(
               datetime.timedelta(hours=5, minutes=30)
@@ -119,15 +110,14 @@ jobs:
           theme = THEMES[theme_index]
 
 
-          # ==========================================
-          # VISUAL STYLE
-          # ==========================================
+          # =========================================================
+          # VISUAL IDENTITY
+          # =========================================================
 
           STYLE = """
           Premium dark cinematic visual identity.
 
-          Deep blacks.
-          Charcoal shadows.
+          Deep black and charcoal environments.
           Cool blue and subtle violet highlights.
           Dramatic cinematic lighting.
           Realistic materials.
@@ -137,7 +127,7 @@ jobs:
           Highly detailed textures.
           Professional photography aesthetics.
           Strong contrast.
-          Moody atmosphere.
+          Moody futuristic atmosphere.
 
           No visible text.
           No watermark.
@@ -150,43 +140,38 @@ jobs:
           """
 
 
-          # ==========================================
+          # =========================================================
           # GEMINI PROMPT
-          # ==========================================
+          # =========================================================
 
           PROMPT_REQUEST = f"""
-
           You are an expert AI image prompt engineer.
 
           Today's theme:
-
           {theme}
 
           Permanent visual identity:
-
           {STYLE}
 
           Create EXACTLY 4 completely different image concepts.
 
-          All four images must belong to the same premium visual collection.
-
-          Each image must have a substantially different:
+          The four images must feel like one premium collection,
+          but every image must have a substantially different:
 
           - scene
           - composition
           - environment
           - subject action
           - camera perspective
+          - lighting arrangement
 
-          For each image create an extremely detailed
-          image-generation prompt.
+          For every image create an extremely detailed prompt.
 
-          Every prompt must describe:
+          Include:
 
           - main subject
-          - subject appearance
+          - appearance
           - clothing
-          - materials
           - pose
           - action
           - environment
@@ -205,15 +190,14 @@ jobs:
           - composition
           - perspective
           - realism
-          - texture
+          - textures
           - fine details
           - cinematic mood
           - negative prompt instructions
 
-          Make every prompt detailed enough that it can be directly
-          used in an image generator.
+          Make the prompts directly usable by an image generator.
 
-          Make the four prompts substantially different.
+          Do not make the four scenes similar.
 
           Return ONLY valid JSON.
 
@@ -228,19 +212,19 @@ jobs:
               "very detailed prompt 4"
             ]
           }}
-
           """
 
 
-          # ==========================================
-          # GEMINI
-          # ==========================================
+          # =========================================================
+          # GEMINI REQUEST
+          # =========================================================
 
           def gemini_generate_prompts():
 
               url = (
                   "https://generativelanguage.googleapis.com/"
-                  "v1beta/models/gemini-3.5-flash:generateContent"
+                  "v1beta/models/"
+                  f"{GEMINI_MODEL}:generateContent"
               )
 
               payload = {
@@ -268,29 +252,85 @@ jobs:
                   method="POST"
               )
 
-                        for attempt in range(1, 4):
-              try:
-                  with urllib.request.urlopen(
-                      request,
-                      timeout=120
-                  ) as response:
-                      result = json.loads(
-                          response.read().decode("utf-8")
+              result = None
+
+              # -----------------------------------------------------
+              # RETRY GEMINI
+              # -----------------------------------------------------
+
+              for attempt in range(1, 4):
+
+                  try:
+
+                      print(
+                          f"Gemini attempt "
+                          f"{attempt}/3..."
                       )
-                  break
 
-              except (urllib.error.HTTPError, urllib.error.URLError) as error:
-                  print(f"Gemini attempt {attempt}/3 failed: {error}")
+                      with urllib.request.urlopen(
+                          request,
+                          timeout=120
+                      ) as response:
 
-                  if attempt == 3:
-                      print("Gemini failed after 3 attempts.")
-                      raise
+                          result = json.loads(
+                              response.read().decode("utf-8")
+                          )
 
-                  wait_seconds = attempt * 10
-                  print(f"Retrying Gemini in {wait_seconds} seconds...")
-                  import time
-                  time.sleep(wait_seconds)
+                      print("Gemini request successful.")
+                      break
 
+                  except (
+                      urllib.error.HTTPError,
+                      urllib.error.URLError
+                  ) as error:
+
+                      print(
+                          f"Gemini attempt "
+                          f"{attempt}/3 failed:"
+                      )
+
+                      print(error)
+
+                      if isinstance(
+                          error,
+                          urllib.error.HTTPError
+                      ):
+
+                          try:
+                              error_body = (
+                                  error.read()
+                                  .decode(
+                                      "utf-8",
+                                      errors="replace"
+                                  )
+                              )
+
+                              print(error_body[:3000])
+
+                          except Exception:
+                              pass
+
+                      if attempt == 3:
+
+                          print(
+                              "Gemini failed after 3 attempts."
+                          )
+
+                          raise
+
+                      wait_seconds = 15 * attempt
+
+                      print(
+                          f"Waiting "
+                          f"{wait_seconds} seconds..."
+                      )
+
+                      time.sleep(wait_seconds)
+
+
+              # -----------------------------------------------------
+              # EXTRACT TEXT
+              # -----------------------------------------------------
 
               try:
 
@@ -299,9 +339,16 @@ jobs:
                       ["content"]["parts"][0]["text"]
                   )
 
-              except (KeyError, IndexError) as error:
+              except (
+                  KeyError,
+                  IndexError,
+                  TypeError
+              ) as error:
 
-                  print("Unexpected Gemini response:")
+                  print(
+                      "Unexpected Gemini response:"
+                  )
+
                   print(
                       json.dumps(
                           result,
@@ -314,17 +361,55 @@ jobs:
                   ) from error
 
 
-              return json.loads(text)
+              # -----------------------------------------------------
+              # CLEAN JSON
+              # -----------------------------------------------------
+
+              text = text.strip()
+
+              if text.startswith("```"):
+
+                  text = text.replace(
+                      "```json",
+                      "",
+                      1
+                  )
+
+                  text = text.replace(
+                      "```",
+                      "",
+                      1
+                  )
+
+                  text = text.strip()
 
 
-          # ==========================================
+              try:
+
+                  return json.loads(text)
+
+              except json.JSONDecodeError as error:
+
+                  print(
+                      "Gemini returned invalid JSON:"
+                  )
+
+                  print(text[:5000])
+
+                  raise Exception(
+                      "Gemini JSON parsing failed."
+                  ) from error
+
+
+          # =========================================================
           # HUGGING FACE IMAGE GENERATION
-          # ==========================================
+          # =========================================================
 
           def download_image(prompt, filename):
 
+              print("")
               print(
-                  f"Generating image with Hugging Face: {filename}"
+                  f"Generating image: {filename}"
               )
 
               client = InferenceClient(
@@ -334,28 +419,31 @@ jobs:
 
               image = client.text_to_image(
                   prompt=prompt,
-                  model="stabilityai/stable-diffusion-3-medium-diffusers"
+                  model=HF_MODEL
               )
 
               image.save(filename)
 
               print(
-                  f"Saved image: {filename}"
+                  f"Saved: {filename}"
               )
 
 
-          # ==========================================
-          # TELEGRAM API
-          # ==========================================
+          # =========================================================
+          # TELEGRAM REQUEST
+          # =========================================================
 
           def telegram_request(
               method,
               data,
-              content_type="application/x-www-form-urlencoded"
+              content_type=(
+                  "application/"
+                  "x-www-form-urlencoded"
+              )
           ):
 
               url = (
-                  f"https://api.telegram.org/"
+                  "https://api.telegram.org/"
                   f"bot{BOT_TOKEN}/{method}"
               )
 
@@ -376,14 +464,19 @@ jobs:
                   ) as response:
 
                       return json.loads(
-                          response.read().decode("utf-8")
+                          response.read().decode(
+                              "utf-8"
+                          )
                       )
 
               except urllib.error.HTTPError as error:
 
-                  error_body = error.read().decode(
-                      "utf-8",
-                      errors="replace"
+                  error_body = (
+                      error.read()
+                      .decode(
+                          "utf-8",
+                          errors="replace"
+                      )
                   )
 
                   print(
@@ -395,9 +488,9 @@ jobs:
                   raise
 
 
-          # ==========================================
-          # SEND TELEGRAM TEXT
-          # ==========================================
+          # =========================================================
+          # SEND TEXT
+          # =========================================================
 
           def send_message(text):
 
@@ -423,14 +516,15 @@ jobs:
               return result
 
 
-          # ==========================================
-          # SEND 4 IMAGES AS ALBUM
-          # ==========================================
+          # =========================================================
+          # SEND IMAGE ALBUM
+          # =========================================================
 
           def send_media_group(image_files):
 
               boundary = (
-                  "----TelegramBoundary987654321"
+                  "----TelegramBoundary"
+                  "987654321"
               )
 
               body = bytearray()
@@ -444,9 +538,9 @@ jobs:
 
                   body.extend(
                       (
-                          f'Content-Disposition: '
+                          "Content-Disposition: "
                           f'form-data; name="{name}"'
-                          f'\r\n\r\n'
+                          "\r\n\r\n"
                       ).encode()
                   )
 
@@ -454,7 +548,9 @@ jobs:
                       value.encode("utf-8")
                   )
 
-                  body.extend(b"\r\n")
+                  body.extend(
+                      b"\r\n"
+                  )
 
 
               media = []
@@ -464,7 +560,9 @@ jobs:
                   media.append(
                       {
                           "type": "photo",
-                          "media": f"attach://{filename}"
+                          "media": (
+                              f"attach://{filename}"
+                          )
                       }
                   )
 
@@ -488,16 +586,17 @@ jobs:
 
                   body.extend(
                       (
-                          f'Content-Disposition: form-data; '
+                          "Content-Disposition: "
+                          "form-data; "
                           f'name="{filename}"; '
-                          f'filename="{filename}"\r\n'
+                          f'filename="{filename}"'
+                          "\r\n"
                       ).encode()
                   )
 
                   body.extend(
                       b"Content-Type: image/png\r\n\r\n"
                   )
-
 
                   with open(
                       filename,
@@ -507,7 +606,6 @@ jobs:
                       body.extend(
                           file.read()
                       )
-
 
                   body.extend(
                       b"\r\n"
@@ -529,18 +627,24 @@ jobs:
               )
 
 
-          # ==========================================
+          # =========================================================
           # MAIN
-          # ==========================================
+          # =========================================================
 
           def main():
 
               print("")
-              print("==============================")
-              print("AI TELEGRAM AUTO POSTER")
-              print("==============================")
-              print("")
+              print(
+                  "================================"
+              )
+              print(
+                  "AI TELEGRAM AUTO POSTER"
+              )
+              print(
+                  "================================"
+              )
 
+              print("")
               print(
                   "Theme:",
                   theme
@@ -552,23 +656,22 @@ jobs:
               )
 
 
-              # --------------------------
+              # -----------------------------------------------------
               # GEMINI
-              # --------------------------
+              # -----------------------------------------------------
 
-              result = gemini_generate_prompts()
-
+              result = (
+                  gemini_generate_prompts()
+              )
 
               title = result.get(
                   "title",
                   "Daily AI Collection"
               )
 
-
               prompts = result.get(
                   "prompts"
               )
-
 
               if not isinstance(
                   prompts,
@@ -576,9 +679,9 @@ jobs:
               ):
 
                   raise Exception(
-                      "Gemini did not return a prompt list."
+                      "Gemini did not return "
+                      "a prompt list."
                   )
-
 
               if len(prompts) != 4:
 
@@ -587,18 +690,16 @@ jobs:
                       f"4 prompts. Got {len(prompts)}."
                   )
 
-
               print(
                   "Gemini generated 4 prompts."
               )
 
 
-              # --------------------------
-              # GENERATE IMAGES
-              # --------------------------
+              # -----------------------------------------------------
+              # IMAGES
+              # -----------------------------------------------------
 
               image_files = []
-
 
               for i, prompt in enumerate(
                   prompts,
@@ -607,11 +708,6 @@ jobs:
 
                   filename = (
                       f"image_{i}.png"
-                  )
-
-                  print("")
-                  print(
-                      f"Generating image {i}/4..."
                   )
 
                   download_image(
@@ -624,42 +720,42 @@ jobs:
                   )
 
 
-              # --------------------------
+              # -----------------------------------------------------
               # TELEGRAM ALBUM
-              # --------------------------
+              # -----------------------------------------------------
 
               print("")
               print(
-                  "Uploading 4 images to Telegram..."
+                  "Uploading 4 images..."
               )
 
-
-              telegram_result = send_media_group(
-                  image_files
+              telegram_result = (
+                  send_media_group(
+                      image_files
+                  )
               )
 
-
-              if not telegram_result.get("ok"):
+              if not telegram_result.get(
+                  "ok"
+              ):
 
                   raise Exception(
                       "Telegram album failed: "
                       + str(telegram_result)
                   )
 
-
               print(
                   "4 images posted successfully."
               )
 
 
-              # --------------------------
-              # SEND PROMPTS
-              # --------------------------
+              # -----------------------------------------------------
+              # PROMPTS
+              # -----------------------------------------------------
 
               prompt_message = (
                   f"🎨 {title}\n\n"
               )
-
 
               for i, prompt in enumerate(
                   prompts,
@@ -672,11 +768,10 @@ jobs:
                   )
 
 
-              # Telegram text limit
-              # is approximately 4096 chars.
-
               chunks = [
-                  prompt_message[i:i + 4000]
+                  prompt_message[
+                      i:i + 4000
+                  ]
                   for i in range(
                       0,
                       len(prompt_message),
@@ -687,18 +782,26 @@ jobs:
 
               for chunk in chunks:
 
-                  send_message(chunk)
+                  send_message(
+                      chunk
+                  )
 
 
               print("")
-              print("==============================")
-              print("SUCCESS")
-              print("==============================")
+              print(
+                  "================================"
+              )
+              print(
+                  "SUCCESS"
+              )
+              print(
+                  "================================"
+              )
 
 
-          # ==========================================
+          # =========================================================
           # START
-          # ==========================================
+          # =========================================================
 
           if __name__ == "__main__":
               main()
