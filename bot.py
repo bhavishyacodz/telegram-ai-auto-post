@@ -585,36 +585,70 @@ def gemini_generate_content():
 # GEMINI IMAGE GENERATION
 # ============================================================
 
+# ============================================================
+# GEMINI IMAGE GENERATION
+# ============================================================
+
 def download_image(prompt, filename):
     print(f"Generating image with Gemini: {filename}")
 
     try:
-        from google import genai
-        from google.genai import types
+        import json
         import base64
 
-        client = genai.Client(api_key=GEMINI_KEY)
-
-        response = client.models.generate_content(
-            model="gemini-3.1-flash-image",
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_modalities=["IMAGE"],
-                response_format={
-                    "image": {
-                        "aspect_ratio": "1:1",
-                        "image_size": "2K"
-                    }
-                }
-            )
+        url = (
+            "https://generativelanguage.googleapis.com/v1/"
+            "models/gemini-3.1-flash-image:generateContent"
         )
 
-        for part in response.parts:
-            if part.inline_data:
-                image_data = part.inline_data.data
+        payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {
+                            "text": prompt
+                        }
+                    ]
+                }
+            ],
+            "generationConfig": {
+                "responseModalities": ["IMAGE"],
+                "responseFormat": {
+                    "image": {
+                        "aspectRatio": "1:1",
+                        "imageSize": "2K"
+                    }
+                }
+            }
+        }
 
-                if isinstance(image_data, str):
-                    image_data = base64.b64decode(image_data)
+        data = json.dumps(payload).encode("utf-8")
+
+        request = urllib.request.Request(
+            url,
+            data=data,
+            headers={
+                "x-goog-api-key": GEMINI_KEY,
+                "Content-Type": "application/json"
+            },
+            method="POST"
+        )
+
+        with urllib.request.urlopen(request, timeout=300) as response:
+            result = json.loads(response.read().decode("utf-8"))
+
+        candidates = result.get("candidates", [])
+
+        if not candidates:
+            raise Exception(f"Gemini returned no candidates: {result}")
+
+        parts = candidates[0].get("content", {}).get("parts", [])
+
+        for part in parts:
+            inline_data = part.get("inlineData")
+
+            if inline_data and inline_data.get("data"):
+                image_data = base64.b64decode(inline_data["data"])
 
                 with open(filename, "wb") as file:
                     file.write(image_data)
@@ -622,7 +656,7 @@ def download_image(prompt, filename):
                 print(f"Saved Gemini image: {filename}")
                 return filename
 
-        raise Exception("Gemini did not return an image.")
+        raise Exception(f"Gemini response contained no image: {result}")
 
     except Exception as error:
         print(f"Gemini image generation failed: {error}")
