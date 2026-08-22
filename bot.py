@@ -1,6 +1,7 @@
 import datetime
 import json
 import os
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -8,53 +9,73 @@ import urllib.request
 from huggingface_hub import InferenceClient
 
 
-# ==========================================
+# ============================================================
 # ENVIRONMENT VARIABLES
-# ==========================================
+# ============================================================
 
 GEMINI_KEY = os.environ["GEMINI_API_KEY"]
 HF_TOKEN = os.environ["HF_TOKEN"]
 BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 
 
-# ==========================================
+# ============================================================
 # TELEGRAM CHANNEL
-# ==========================================
+# ============================================================
 
 CHANNEL = "@BHUVIAIPROMPTIMAGES"
 
 
-# ==========================================
-# IMAGE THEMES
-# ==========================================
+# ============================================================
+# CONTROLLED CONTENT CATEGORIES
+# ============================================================
 
-THEMES = [
-    "dark futuristic game developer",
-    "cyberpunk programmer",
-    "futuristic AI engineer",
-    "dark gaming workstation",
-    "neon game development studio",
-    "cyberpunk city at midnight",
-    "mysterious digital creator",
-    "futuristic hacker workstation",
-    "dark futuristic technology",
-    "AI laboratory at night",
-    "neon-lit software developer",
-    "futuristic virtual reality creator",
-    "dark sci-fi command center",
-    "cyberpunk game designer",
-    "future technology architect",
-    "digital artist in a futuristic studio",
-    "dark robotics engineer",
-    "futuristic computer scientist",
-    "neon-lit creative studio",
-    "post-apocalyptic programmer"
+CATEGORIES = [
+    {
+        "id": "cinematic_photography",
+        "name": "Cinematic Photography",
+        "description": "Realistic cinematic photography, portraits, streets, environments and dramatic scenes."
+    },
+    {
+        "id": "game_art",
+        "name": "Game Art",
+        "description": "Game development concepts, characters, environments, worlds and cinematic game scenes."
+    },
+    {
+        "id": "cyberpunk",
+        "name": "Cyberpunk",
+        "description": "Futuristic cities, technology, programmers, neon environments and cyberpunk storytelling."
+    },
+    {
+        "id": "sci_fi",
+        "name": "Science Fiction",
+        "description": "Advanced technology, spacecraft, laboratories, futuristic worlds and speculative environments."
+    },
+    {
+        "id": "fantasy",
+        "name": "Fantasy",
+        "description": "Epic fantasy environments, characters, magical worlds and cinematic storytelling."
+    },
+    {
+        "id": "product_visuals",
+        "name": "Product Visuals",
+        "description": "Premium product photography, advertising concepts, commercial visuals and studio scenes."
+    },
+    {
+        "id": "architecture",
+        "name": "Architecture",
+        "description": "Modern architecture, futuristic buildings, interiors, urban spaces and architectural photography."
+    },
+    {
+        "id": "surreal_art",
+        "name": "Surreal Art",
+        "description": "Dreamlike, imaginative, unusual and visually striking conceptual scenes."
+    }
 ]
 
 
-# ==========================================
-# TIME / DAILY THEME
-# ==========================================
+# ============================================================
+# DAILY CATEGORY SELECTION
+# ============================================================
 
 IST = datetime.timezone(
     datetime.timedelta(hours=5, minutes=30)
@@ -66,131 +87,288 @@ slot = 0 if now.hour < 15 else 1
 
 day_number = now.timetuple().tm_yday
 
-theme_index = (
+category_index = (
     ((day_number - 1) * 2) + slot
-) % len(THEMES)
+) % len(CATEGORIES)
 
-theme = THEMES[theme_index]
+category = CATEGORIES[category_index]
 
 
-# ==========================================
-# VISUAL STYLE
-# ==========================================
+# ============================================================
+# PERMANENT VISUAL IDENTITY
+# ============================================================
 
 STYLE = """
-Premium dark cinematic visual identity.
+Maintain a premium, cinematic and professional visual identity.
 
-Deep blacks.
-Charcoal shadows.
-Cool blue and subtle violet highlights.
-Dramatic cinematic lighting.
-Realistic materials.
-Atmospheric depth.
-Sophisticated composition.
-Realistic human proportions.
-Highly detailed textures.
-Professional photography aesthetics.
-Strong contrast.
-Moody atmosphere.
+Use strong visual storytelling.
 
-No visible text.
-No watermark.
-No logo.
-No random letters.
-No distorted anatomy.
-No malformed hands.
-No extra fingers.
-No duplicated objects.
+Prefer realistic materials and believable environments.
+
+Use sophisticated composition and deliberate camera perspective.
+
+Use detailed textures and atmospheric depth.
+
+Use strong but controlled contrast.
+
+Use cinematic lighting appropriate to the scene.
+
+Avoid cheap-looking AI aesthetics.
+
+Avoid generic stock-photo composition.
+
+Avoid excessive visual clutter.
+
+Avoid unnecessary objects.
+
+Avoid visible text unless the concept absolutely requires it.
+
+Avoid watermarks.
+
+Avoid logos.
+
+Avoid random letters.
+
+Avoid distorted anatomy.
+
+Avoid malformed hands.
+
+Avoid extra fingers.
+
+Avoid duplicated people.
+
+Avoid duplicated objects.
+
+Avoid impossible geometry.
+
+Keep the subject visually coherent.
+
+Every image must feel intentionally designed rather than randomly generated.
 """
 
 
-# ==========================================
-# GEMINI PROMPT
-# ==========================================
+# ============================================================
+# GEMINI REQUEST
+# ============================================================
 
 PROMPT_REQUEST = f"""
+You are the content engine for a professional AI image prompt library.
 
-You are an expert AI image prompt engineer.
+The goal is NOT to create random pretty images.
 
-Today's theme:
+The goal is to create useful, original, copy-ready AI image prompts
+that teach people how to create strong images.
 
-{theme}
+Today's category:
+
+{category["name"]}
+
+Category description:
+
+{category["description"]}
 
 Permanent visual identity:
 
 {STYLE}
 
-Create EXACTLY 4 completely different image concepts.
 
-All four images must belong to the same premium visual collection.
+Create EXACTLY 4 different image concepts for today's collection.
 
-Each image must have a substantially different:
+The four concepts must clearly belong to the same collection,
+but they must be substantially different from one another.
 
-- scene
-- composition
+Change the following between the four concepts:
+
+- subject
 - environment
-- subject action
-- camera perspective
-
-For each image create an extremely detailed
-image-generation prompt.
-
-Every prompt must describe:
-
-- main subject
-- subject appearance
-- clothing
-- materials
-- pose
+- composition
 - action
+- camera perspective
+- visual storytelling
+
+
+IMPORTANT:
+
+Do not make four variations of the same scene.
+
+Each prompt must be independently useful.
+
+Each prompt must be detailed enough to paste directly into
+an image generation model.
+
+
+For EACH image return these fields:
+
+1. "concept_title"
+   Short and memorable title.
+
+2. "subject"
+   The primary subject of the image.
+
+3. "style"
+   The visual style.
+
+4. "composition"
+   How the scene is arranged and framed.
+
+5. "lighting"
+   Lighting direction, quality and behavior.
+
+6. "camera"
+   Camera angle, distance, lens and depth of field.
+
+7. "modifiers"
+   Important visual modifiers such as atmosphere,
+   texture, film grain, volumetric effects or realism.
+
+8. "aspect_ratio"
+   Choose the most appropriate ratio from ONLY:
+   "1:1"
+   "4:5"
+   "16:9"
+   "9:16"
+
+Use:
+- 4:5 for portrait/editorial/social imagery
+- 9:16 for vertical cinematic scenes
+- 16:9 for cinematic landscapes, environments and wide scenes
+- 1:1 for square compositions or balanced artwork
+
+9. "full_prompt"
+   Combine the important information into ONE polished,
+   detailed, copy-ready image-generation prompt.
+
+10. "breakdown"
+    Return EXACTLY 3 short explanations.
+
+    Each explanation must teach why a particular prompt element
+    improves the image.
+
+    Example:
+    "85mm lens → creates natural portrait compression."
+    "Rim lighting → separates the subject from the dark background."
+    "Shallow depth of field → keeps attention on the subject."
+
+
+The full_prompt MUST include:
+
+- subject
+- appearance
+- pose/action
+- clothing when relevant
 - environment
 - background
-- important objects
 - foreground
-- lighting direction
-- lighting quality
-- shadows
-- atmosphere
-- color palette
-- camera angle
-- camera distance
-- lens
-- depth of field
 - composition
 - perspective
-- realism
-- texture
+- lighting
+- atmosphere
+- color palette
+- camera
+- lens
+- depth of field
+- materials
+- textures
 - fine details
 - cinematic mood
-- negative prompt instructions
+- quality instructions
+- negative instructions
 
-Make every prompt detailed enough that it can be directly
-used in an image generator.
 
-Make the four prompts substantially different.
+The full_prompt must NOT contain explanations outside the actual prompt.
+
+Make the prompts original.
+
+Do not copy known prompts from websites.
+
+Do not mention OpenArt, PromptCreek, Reddit, Midjourney, Flux,
+Stable Diffusion or any other external source.
+
+Do not claim that a prompt was tested on any particular model.
 
 Return ONLY valid JSON.
 
-EXACT FORMAT:
+EXACT JSON STRUCTURE:
 
 {{
-  "title": "short collection title",
-  "prompts": [
-    "very detailed prompt 1",
-    "very detailed prompt 2",
-    "very detailed prompt 3",
-    "very detailed prompt 4"
+  "collection_title": "short collection title",
+  "category": "{category["name"]}",
+  "collection_description": "2 short sentences describing what this collection teaches or explores",
+  "images": [
+    {{
+      "concept_title": "title",
+      "subject": "subject",
+      "style": "style",
+      "composition": "composition",
+      "lighting": "lighting",
+      "camera": "camera",
+      "modifiers": "modifiers",
+      "aspect_ratio": "16:9",
+      "full_prompt": "complete copy-ready prompt",
+      "breakdown": [
+        "explanation 1",
+        "explanation 2",
+        "explanation 3"
+      ]
+    }},
+    {{
+      "concept_title": "title",
+      "subject": "subject",
+      "style": "style",
+      "composition": "composition",
+      "lighting": "lighting",
+      "camera": "camera",
+      "modifiers": "modifiers",
+      "aspect_ratio": "4:5",
+      "full_prompt": "complete copy-ready prompt",
+      "breakdown": [
+        "explanation 1",
+        "explanation 2",
+        "explanation 3"
+      ]
+    }},
+    {{
+      "concept_title": "title",
+      "subject": "subject",
+      "style": "style",
+      "composition": "composition",
+      "lighting": "lighting",
+      "camera": "camera",
+      "modifiers": "modifiers",
+      "aspect_ratio": "16:9",
+      "full_prompt": "complete copy-ready prompt",
+      "breakdown": [
+        "explanation 1",
+        "explanation 2",
+        "explanation 3"
+      ]
+    }},
+    {{
+      "concept_title": "title",
+      "subject": "subject",
+      "style": "style",
+      "composition": "composition",
+      "lighting": "lighting",
+      "camera": "camera",
+      "modifiers": "modifiers",
+      "aspect_ratio": "9:16",
+      "full_prompt": "complete copy-ready prompt",
+      "breakdown": [
+        "explanation 1",
+        "explanation 2",
+        "explanation 3"
+      ]
+    }}
   ]
 }}
-
 """
 
 
-# ==========================================
-# GEMINI
-# ==========================================
+# ============================================================
+# GEMINI API
+# ============================================================
 
-def gemini_generate_prompts():
+def gemini_request():
 
     url = (
         "https://generativelanguage.googleapis.com/"
@@ -222,38 +400,26 @@ def gemini_generate_prompts():
         method="POST"
     )
 
-    try:
+    with urllib.request.urlopen(
+        request,
+        timeout=120
+    ) as response:
 
-        with urllib.request.urlopen(
-            request,
-            timeout=120
-        ) as response:
-
-            result = json.loads(
-                response.read().decode("utf-8")
-            )
-
-    except urllib.error.HTTPError as error:
-
-        error_body = error.read().decode(
-            "utf-8",
-            errors="replace"
+        return json.loads(
+            response.read().decode("utf-8")
         )
 
-        print("Gemini HTTP error:")
-        print(error_body)
 
-        raise
-
+def extract_gemini_text(result):
 
     try:
 
-        text = (
+        return (
             result["candidates"][0]
             ["content"]["parts"][0]["text"]
         )
 
-    except (KeyError, IndexError) as error:
+    except (KeyError, IndexError, TypeError) as error:
 
         print("Unexpected Gemini response:")
         print(
@@ -264,16 +430,152 @@ def gemini_generate_prompts():
         )
 
         raise Exception(
-            "Gemini did not return valid text."
+            "Gemini response did not contain valid text."
         ) from error
 
 
-    return json.loads(text)
+def validate_result(result):
+
+    if not isinstance(result, dict):
+        raise ValueError("Gemini result is not an object.")
+
+    collection_title = result.get("collection_title")
+
+    images = result.get("images")
+
+    if not collection_title:
+        raise ValueError(
+            "Missing collection_title."
+        )
+
+    if not isinstance(images, list):
+        raise ValueError(
+            "Missing images list."
+        )
+
+    if len(images) != 4:
+        raise ValueError(
+            f"Expected exactly 4 images, got {len(images)}."
+        )
+
+    valid_ratios = {
+        "1:1",
+        "4:5",
+        "16:9",
+        "9:16"
+    }
+
+    for index, image in enumerate(images, start=1):
+
+        if not isinstance(image, dict):
+            raise ValueError(
+                f"Image {index} is not an object."
+            )
+
+        required_fields = [
+            "concept_title",
+            "subject",
+            "style",
+            "composition",
+            "lighting",
+            "camera",
+            "modifiers",
+            "aspect_ratio",
+            "full_prompt",
+            "breakdown"
+        ]
+
+        for field in required_fields:
+
+            if not image.get(field):
+                raise ValueError(
+                    f"Image {index} is missing '{field}'."
+                )
+
+        if image["aspect_ratio"] not in valid_ratios:
+            raise ValueError(
+                f"Image {index} has invalid aspect ratio."
+            )
+
+        if not isinstance(
+            image["breakdown"],
+            list
+        ):
+            raise ValueError(
+                f"Image {index} breakdown is not a list."
+            )
+
+        if len(image["breakdown"]) != 3:
+            raise ValueError(
+                f"Image {index} must have exactly 3 breakdown points."
+            )
+
+    return result
 
 
-# ==========================================
+def gemini_generate_content():
+
+    last_error = None
+
+    for attempt in range(1, 3):
+
+        print(
+            f"Gemini generation attempt {attempt}/2..."
+        )
+
+        try:
+
+            raw_result = gemini_request()
+
+            text = extract_gemini_text(
+                raw_result
+            )
+
+            result = json.loads(text)
+
+            result = validate_result(
+                result
+            )
+
+            print(
+                "Gemini returned valid structured content."
+            )
+
+            return result
+
+        except (
+            urllib.error.HTTPError,
+            urllib.error.URLError,
+            json.JSONDecodeError,
+            ValueError,
+            Exception
+        ) as error:
+
+            last_error = error
+
+            print(
+                f"Gemini attempt {attempt} failed:"
+            )
+
+            print(error)
+
+            if attempt < 2:
+
+                print(
+                    "Retrying Gemini in 10 seconds..."
+                )
+
+                time.sleep(10)
+
+    raise Exception(
+        "Gemini failed to produce valid structured content "
+        f"after 2 attempts: {last_error}"
+    )
+
+
+# ============================================================
 # HUGGING FACE IMAGE GENERATION
-# ==========================================
+# ============================================================
 
 def download_image(prompt, filename):
 
@@ -298,9 +600,9 @@ def download_image(prompt, filename):
     )
 
 
-# ==========================================
+# ============================================================
 # TELEGRAM API
-# ==========================================
+# ============================================================
 
 def telegram_request(
     method,
@@ -349,9 +651,9 @@ def telegram_request(
         raise
 
 
-# ==========================================
+# ============================================================
 # SEND TELEGRAM TEXT
-# ==========================================
+# ============================================================
 
 def send_message(text):
 
@@ -377,9 +679,9 @@ def send_message(text):
     return result
 
 
-# ==========================================
-# SEND 4 IMAGES AS ALBUM
-# ==========================================
+# ============================================================
+# SEND 4 IMAGES AS TELEGRAM ALBUM
+# ============================================================
 
 def send_media_group(image_files):
 
@@ -408,7 +710,9 @@ def send_media_group(image_files):
             value.encode("utf-8")
         )
 
-        body.extend(b"\r\n")
+        body.extend(
+            b"\r\n"
+        )
 
 
     media = []
@@ -452,7 +756,6 @@ def send_media_group(image_files):
             b"Content-Type: image/png\r\n\r\n"
         )
 
-
         with open(
             filename,
             "rb"
@@ -461,7 +764,6 @@ def send_media_group(image_files):
             body.extend(
                 file.read()
             )
-
 
         body.extend(
             b"\r\n"
@@ -483,176 +785,152 @@ def send_media_group(image_files):
     )
 
 
-# ==========================================
-# MAIN
-# ==========================================
+# ============================================================
+# BUILD TELEGRAM CONTENT
+# ============================================================
 
-def main():
+def build_telegram_message(result):
 
-    print("")
-    print("==============================")
-    print("AI TELEGRAM AUTO POSTER")
-    print("==============================")
-    print("")
+    title = result["collection_title"]
 
-    print(
-        "Theme:",
-        theme
+    category_name = result.get(
+        "category",
+        category["name"]
     )
 
-    print("")
-    print(
-        "Generating prompts with Gemini..."
+    description = result.get(
+        "collection_description",
+        ""
     )
 
+    images = result["images"]
 
-    # --------------------------
-    # GEMINI
-    # --------------------------
+    message_parts = []
 
-    result = gemini_generate_prompts()
-
-
-    title = result.get(
-        "title",
-        "Daily AI Collection"
+    message_parts.append(
+        f"🎨 {title}"
     )
 
-
-    prompts = result.get(
-        "prompts"
+    message_parts.append(
+        f"📚 Category: {category_name}"
     )
 
-
-    if not isinstance(
-        prompts,
-        list
-    ):
-
-        raise Exception(
-            "Gemini did not return a prompt list."
+    if description:
+        message_parts.append(
+            f"\n{description}"
         )
 
-
-    if len(prompts) != 4:
-
-        raise Exception(
-            "Gemini did not return exactly "
-            f"4 prompts. Got {len(prompts)}."
-        )
-
-
-    print(
-        "Gemini generated 4 prompts."
+    message_parts.append(
+        "\n━━━━━━━━━━━━━━━━━━"
     )
 
-
-    # --------------------------
-    # GENERATE IMAGES
-    # --------------------------
-
-    image_files = []
-
-
-    for i, prompt in enumerate(
-        prompts,
+    for index, image in enumerate(
+        images,
         start=1
     ):
 
-        filename = (
-            f"image_{i}.png"
+        message_parts.append(
+            f"\n🖼️ IMAGE {index} — {image['concept_title']}"
         )
 
-        print("")
-        print(
-            f"Generating image {i}/4..."
+        message_parts.append(
+            f"📐 Aspect ratio: {image['aspect_ratio']}"
         )
 
-        download_image(
-            prompt,
-            filename
+        message_parts.append(
+            "\n📋 COPY-READY PROMPT\n"
+            + image["full_prompt"]
         )
 
-        image_files.append(
-            filename
+        message_parts.append(
+            "\n💡 WHY IT WORKS"
         )
 
+        for point in image["breakdown"]:
 
-    # --------------------------
-    # TELEGRAM ALBUM
-    # --------------------------
+            message_parts.append(
+                f"• {point}"
+            )
 
-    print("")
-    print(
-        "Uploading 4 images to Telegram..."
+        message_parts.append(
+            "\n━━━━━━━━━━━━━━━━━━"
+        )
+
+    return "\n".join(
+        message_parts
     )
 
 
-    telegram_result = send_media_group(
-        image_files
-    )
+# ============================================================
+# SEND LONG TELEGRAM MESSAGE IN SAFE CHUNKS
+# ============================================================
 
+def send_long_message(text):
 
-    if not telegram_result.get("ok"):
-
-        raise Exception(
-            "Telegram album failed: "
-            + str(telegram_result)
-        )
-
-
-    print(
-        "4 images posted successfully."
-    )
-
-
-    # --------------------------
-    # SEND PROMPTS
-    # --------------------------
-
-    prompt_message = (
-        f"🎨 {title}\n\n"
-    )
-
-
-    for i, prompt in enumerate(
-        prompts,
-        start=1
-    ):
-
-        prompt_message += (
-            f"━━ IMAGE {i} ━━\n"
-            f"{prompt}\n\n"
-        )
-
-
-    # Telegram text limit
-    # is approximately 4096 chars.
+    max_length = 3900
 
     chunks = [
-        prompt_message[i:i + 4000]
+        text[i:i + max_length]
         for i in range(
             0,
-            len(prompt_message),
-            4000
+            len(text),
+            max_length
         )
     ]
 
+    for index, chunk in enumerate(
+        chunks,
+        start=1
+    ):
 
-    for chunk in chunks:
+        print(
+            f"Sending Telegram text chunk "
+            f"{index}/{len(chunks)}..."
+        )
 
         send_message(chunk)
 
 
+# ============================================================
+# MAIN
+# ============================================================
+
+def main():
+
     print("")
-    print("==============================")
-    print("SUCCESS")
-    print("==============================")
+    print("======================================")
+    print("AI TELEGRAM PROMPT LIBRARY V1")
+    print("======================================")
+    print("")
+
+    print(
+        "Today's category:",
+        category["name"]
+    )
+
+    print(
+        "Category description:",
+        category["description"]
+    )
+
+    print("")
+    print(
+        "Generating structured prompt collection..."
+    )
+
+    result = gemini_generate_content()
+
+    print("")
+    print(
+        "Collection:",
+        result["collection_title"]
+    )
+
+    print(
+        "4 structured prompts generated."
+    )
 
 
-# ==========================================
-# START
-# ==========================================
-
-if __name__ == "__main__":
-    main()
+    # --------------------------------------------------------
+    # GENERATE IMAGES
+    # ------------------------------------------
