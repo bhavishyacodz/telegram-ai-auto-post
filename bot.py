@@ -590,40 +590,35 @@ def gemini_generate_content():
 # ============================================================
 
 def download_image(prompt, filename):
-    print(f"Generating image with Pollinations FLUX: {filename}")
+    print(f"Generating image with Pollinations: {filename}")
 
     try:
-        import urllib.parse
-        import urllib.request
-
         encoded_prompt = urllib.parse.quote(prompt)
 
         url = (
-            f"https://gen.pollinations.ai/image/{encoded_prompt}"
-            f"?model=flux"
-            f"&width=1024"
-            f"&height=1024"
+            "https://image.pollinations.ai/prompt/"
+            f"{encoded_prompt}"
+            "?width=1024"
+            "&height=1024"
+            "&nologo=true"
         )
 
         request = urllib.request.Request(
             url,
-            headers={
-                "Authorization": f"Bearer {os.environ['POLLINATIONS_API_KEY']}",
-                "User-Agent": "Mozilla/5.0"
-            }
+            headers={"User-Agent": "Mozilla/5.0"}
         )
 
-        with urllib.request.urlopen(request, timeout=300) as response:
+        with urllib.request.urlopen(request, timeout=180) as response:
             image_data = response.read()
 
         with open(filename, "wb") as file:
             file.write(image_data)
 
-        print(f"Saved Pollinations image: {filename}")
+        print(f"Saved image: {filename}")
         return filename
 
     except Exception as error:
-        print(f"Pollinations image generation failed: {error}")
+        print(f"Image generation failed: {error}")
         raise
 
 
