@@ -590,35 +590,40 @@ def gemini_generate_content():
 # ============================================================
 
 def download_image(prompt, filename):
-    print(f"Generating image with Pollinations: {filename}")
+    print(f"Generating image with Gemini: {filename}")
 
     try:
-        encoded_prompt = urllib.parse.quote(prompt)
+        import base64
+        from google import genai
 
-        url = (
-            "https://image.pollinations.ai/prompt/"
-            f"{encoded_prompt}"
-            "?width=1024"
-            "&height=1024"
-            "&nologo=true"
+        client = genai.Client(api_key=GEMINI_KEY)
+
+        interaction = client.interactions.create(
+            model="gemini-3.1-flash-image",
+            input=prompt,
+            response_format={
+                "type": "image",
+                "mime_type": "image/jpeg",
+                "aspect_ratio": "1:1",
+                "image_size": "2K"
+            }
         )
 
-        request = urllib.request.Request(
-            url,
-            headers={"User-Agent": "Mozilla/5.0"}
-        )
+        if not interaction.output_image:
+            raise Exception("Gemini returned no image.")
 
-        with urllib.request.urlopen(request, timeout=180) as response:
-            image_data = response.read()
+        image_data = base64.b64decode(
+            interaction.output_image.data
+        )
 
         with open(filename, "wb") as file:
             file.write(image_data)
 
-        print(f"Saved image: {filename}")
+        print(f"Saved Gemini image: {filename}")
         return filename
 
     except Exception as error:
-        print(f"Image generation failed: {error}")
+        print(f"Gemini image generation failed: {error}")
         raise
 
 
