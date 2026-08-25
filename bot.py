@@ -590,7 +590,6 @@ def gemini_generate_content():
 # ============================================================
 
 def download_image(prompt, filename):
-def download_image(prompt, filename):
     print(
         f"Generating image with Pollinations: {filename}"
     )
