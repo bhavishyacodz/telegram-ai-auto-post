@@ -779,74 +779,68 @@ visual artifacts.
 # POLLINATIONS IMAGE GENERATION
 # ============================================================
 
-def download_image(
-    prompt,
-    filename,
-    aspect_ratio="1:1",
-):
+def download_image(prompt, filename, aspect_ratio="1:1"):
+    print(f"Generating image with Pollinations: {filename}")
 
-    width, height = get_dimensions(
-        aspect_ratio
+    sizes = {
+        "1:1": (1024, 1024),
+        "4:5": (1024, 1280),
+        "16:9": (1536, 864),
+        "9:16": (864, 1536),
+    }
+
+    width, height = sizes.get(
+        aspect_ratio,
+        (1024, 1024)
     )
 
-    final_prompt = urllib.parse.quote(
-        prompt
+    api_key = os.environ["POLLINATIONS_API_KEY"]
+
+    encoded_prompt = urllib.parse.quote(
+        prompt,
+        safe=""
     )
 
     url = (
-        "https://image.pollinations.ai/prompt/"
-        f"{final_prompt}"
-        f"?width={width}"
+        "https://gen.pollinations.ai/image/"
+        f"{encoded_prompt}"
+        f"?model=flux"
+        f"&width={width}"
         f"&height={height}"
-        "&nologo=true"
     )
 
-    max_attempts = 3
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "User-Agent": "Telegram-AI-Auto-Poster/1.0"
+        }
+    )
 
-    for attempt in range(
-        1,
-        max_attempts + 1,
-    ):
+    last_error = None
 
-        print(
-            f"Image generation attempt "
-            f"{attempt}/{max_attempts}"
-        )
+    for attempt in range(1, 4):
 
         try:
-
-            request = urllib.request.Request(
-                url,
-                headers={
-                    "User-Agent": "Mozilla/5.0"
-                },
+            print(
+                f"Image generation attempt "
+                f"{attempt}/3..."
             )
 
             with urllib.request.urlopen(
                 request,
-                timeout=180,
+                timeout=180
             ) as response:
 
                 image_data = response.read()
 
-            if len(image_data) < 10_000:
-
-                raise ValueError(
-                    "Generated image file is suspiciously small."
+            if not image_data:
+                raise Exception(
+                    "Pollinations returned empty image data."
                 )
 
-            with open(
-                filename,
-                "wb",
-            ) as file:
-
+            with open(filename, "wb") as file:
                 file.write(image_data)
-
-            validate_image(
-                filename,
-                width,
-                height,
-            )
 
             print(
                 f"Saved image: {filename}"
@@ -856,25 +850,19 @@ def download_image(
 
         except Exception as error:
 
+            last_error = error
+
             print(
                 f"Image generation failed: {error}"
             )
 
-            if attempt < max_attempts:
-
-                wait_time = 5 * attempt
-
-                print(
-                    f"Retrying in {wait_time} seconds..."
-                )
-
-                time.sleep(
-                    wait_time
-                )
+            if attempt < 3:
+                print("Retrying in 5 seconds...")
+                time.sleep(5)
 
     raise Exception(
         f"Failed to generate {filename} "
-        f"after {max_attempts} attempts."
+        f"after 3 attempts: {last_error}"
     )
 
 
