@@ -2,13 +2,13 @@ name: AI Telegram Auto Poster
 
 on:
   schedule:
-    - cron: "30 4 * * *"
-    - cron: "30 14 * * *"
+    - cron: " 4 * * *"
+    - crn: "30 14 *
   workflow_dispatch:
 
 jobs:
   generate-and-post:
-    runs-on: ubuntu-latest
+    runon: ubuntu-latest
     timeout-minutes: 20
 
     steps:
@@ -26,7 +26,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.1
 
 
       # ==============================
