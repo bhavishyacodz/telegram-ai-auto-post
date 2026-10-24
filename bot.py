@@ -32,8 +32,8 @@ CHANNEL = "@BHUVIAIPROMPTIMAGES"
 # TIMEZONE
 # ============================================================
 
-IST = datetime.timezone(
-    datetime.timedelta(hours=5, minutes=30)
+IST = datetime.tiezone(
+    datetie.timelta(hors=5, minute=30)
 )
 
 
